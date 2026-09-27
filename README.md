@@ -2,6 +2,8 @@
 
 Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRChat worlds (LCGUdonSharp)** and usable in **standalone games**.
 
+![A Dig Zone on a Unity Terrain: a tunnel through a hill, a dug pit, added soil, and painted snow, rock and sand](Documentation~/images/hero.jpg)
+
 - Dig and add soil at runtime: holes, tunnels and caves under a normal Unity Terrain.
 - Paint any of the terrain's layers (or dug soil) onto the voxel surface, at runtime and in the editor.
 - In VRChat, edits sync to every player, including late joiners.
@@ -12,6 +14,16 @@ Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRCha
 - Move and resize zones with box handles; re-baking keeps your sculpting.
 - Grids are stored run-length compressed (a terrain grid shrinks to a few percent). In VRChat, players decode only the chunks that get dug, reset is instant, and only chunks with a surface have a GameObject, so large zones stay light.
 - One brush and mesher implementation, shared by the Udon runtime and plain C#.
+
+## Screenshots
+
+| Tunnel through a hill | Dug pit and added soil |
+|---|---|
+| ![Tunnel dug through a hill, with a painted sand path](Documentation~/images/tunnel.jpg) | ![A pit dug into the terrain next to a mound of added soil](Documentation~/images/pit.jpg) |
+
+**Sculpting in the editor.** The Dig Sculpt tool, with its brush panel in the Scene view:
+
+![The Dig Sculpt tool and the DigHoleIt Brush overlay in the Scene view](Documentation~/images/editor-sculpt.jpg)
 
 ## Requirements
 
