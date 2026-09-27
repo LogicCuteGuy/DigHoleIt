@@ -2,7 +2,7 @@
 
 The standalone runtime is plain C# (`LogicCuteGuy.DigHoleIt.Standalone`). It compiles in any project without the VRChat SDK, or in a VRChat project with the `DIGHOLEIT_STANDALONE` scripting define.
 
-Bake the zone as usual, then add **Dig Zone Runtime (Standalone)** to the zone GameObject.
+Bake the zone as usual, then click **Add Standalone Runtime** in the zone inspector (or add **Dig Zone Runtime (Standalone)** to the zone GameObject).
 
 ## DigZoneRuntimeStandalone
 
@@ -10,7 +10,7 @@ Bake the zone as usual, then add **Dig Zone Runtime (Standalone)** to the zone G
 |---|---|
 | `Dig(Vector3 world, float radius)` | Digs a sphere at a world position. |
 | `Add(Vector3 world, float radius)` | Adds a sphere of soil. |
-| `Paint(Vector3 world, float radius, int layer)` | Paints voxels: 0 auto (erase paint), 1–4 terrain layers 0–3, 5 dug soil. |
+| `Paint(Vector3 world, float radius, int layer)` | Paints voxels: 0 auto (erase paint), 1–4 terrain layers 0–3, 5 dug soil, 6–17 terrain layers 4–15 (`DigFormat.PaintValue(terrainLayer)`). |
 | `LocalEdit(Vector3 world, float radius, int op, int layer = 0)` | The general form. Raises `LocalEditRequested`, then applies the edit. |
 | `ApplyEdit(long edit)` | Applies a packed edit, for example one received from another player. Returns true if the grid changed. |
 | `LoadEdits(IEnumerable<long> edits)` | Restores the baked grid and replays a list of edits (loading a save, or a late joiner). |

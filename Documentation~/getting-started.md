@@ -13,8 +13,8 @@
 Pick one:
 
 - **Git URL:** *Window > Package Manager > + > Add package from git URL* and enter
-  `https://github.com/LogicCuteGuy/com.logiccuteguy.digholeit.git`.
-  Add `#v0.3.0` (or another tag) to the end to pin a version.
+  `https://github.com/LogicCuteGuy/DigHoleIt.git`.
+  Add `#v0.4.0` (or another tag) to the end to pin a version.
 - **Embedded:** clone or copy the repository into your project's `Packages/com.logiccuteguy.digholeit` folder.
 
 In a VRChat project, install LCGUdonSharp first. The Udon runtime does not compile without it.
@@ -32,12 +32,12 @@ In a VRChat project, install LCGUdonSharp first. The Udon runtime does not compi
    - samples the terrain into the voxel grid;
    - cuts a terrain hole over the zone footprint;
    - bakes the terrain's splat and height maps and fills the zone material from the terrain layers;
-   - creates the chunk mesh objects;
-   - in a VRChat project, adds `DigZoneRuntime` and a child `DigSync`.
-4. Add a way to dig:
-   - **VRChat:** add a pickup with a **DigTool** and put the zone in its `zones` array. See [VRChat runtime](vrchat-runtime.md).
-   - **Standalone:** add **Dig Zone Runtime (Standalone)** to the zone, and **Dig Tool Standalone** to a camera. See [Standalone runtime](standalone-runtime.md).
+   - creates chunk mesh objects for the chunks that have a surface (digging adds more as needed).
+4. Add a runtime and a way to dig. Creating or baking a zone adds no runtime by itself:
+   - **VRChat:** click **Add VRChat Runtime** in the zone inspector (adds `DigZoneRuntime` and a child `DigSync`). Then add a pickup with a **DigTool** and put the zone in its `zones` array. See [VRChat runtime](vrchat-runtime.md).
+   - **Standalone:** click **Add Standalone Runtime** in the zone inspector, and add **Dig Tool Standalone** to a camera. See [Standalone runtime](standalone-runtime.md).
 5. Optional: sculpt and paint the zone in the editor. See [Editor brushes](editor-brushes.md).
+6. If the scene uses baked lighting: click **Add Light Probes** in the zone inspector, then bake lighting (*Window > Rendering > Lighting*). Bake lighting again after sculpting. See [Baked lighting](dig-zones.md#baked-lighting).
 
 You can also start from the terrain: select it, open **Paint Terrain**, pick **DigHoleIt: Dig Voxels** and click **Create Dig Zone**.
 

@@ -24,7 +24,7 @@ The brush axis is the surface normal by default. World up and view direction are
 | Layer | Meaning |
 |---|---|
 | **Auto** | The terrain's own layers above the original surface, dug soil below it. Painting Auto erases paint. |
-| **Layer 0–3** | The terrain layers 0–3. |
+| **Terrain layers** | Every layer of the zone's terrain (up to 16), shown with its texture. |
 | **Dug Soil** | The zone's underground material. |
 
 ## Controls
@@ -35,7 +35,7 @@ The brush axis is the surface normal by default. World up and view direction are
 | Shift / Ctrl (held) | Add / Smooth |
 | A + drag left or right | Brush size |
 | S + drag left or right | Brush strength |
-| `[` `]` | Brush size |
+| `[` `]` | Brush size: a tap changes it by 10%, holding the key keeps shrinking or growing it |
 
 ## Undo and the runtime
 

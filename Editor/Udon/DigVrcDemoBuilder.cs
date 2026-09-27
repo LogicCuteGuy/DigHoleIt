@@ -17,7 +17,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
             DigZone zone = DigDemoBuilder.Build("DigHoleItVRChatDemo");
             if (zone == null) return;
 
-            DigZoneRuntime rt = zone.GetComponent<DigZoneRuntime>();
+            DigZoneRuntime rt = DigUdonBridge.AddRuntime(zone);
             Bounds b = zone.WorldBounds;
             Vector3 spawn = new Vector3(b.min.x - 3f, 0f, b.center.z);
             spawn.y = zone.terrain.SampleHeight(spawn) + zone.terrain.transform.position.y + 0.1f;

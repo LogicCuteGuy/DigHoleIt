@@ -7,7 +7,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
     /// <summary>
     /// Scene-view brush input shared by the Dig Zone sculpt tool and the Terrain tools: raycasts the zones' grids,
     /// draws the brush, applies strokes with undo and remeshing, and handles the size/strength drag
-    /// (hold A or S and drag left/right, like the Terrain Tools package) and [ ] for size.
+    /// (hold A or S and drag left/right, like the Terrain Tools package) and [ ] for size (tap for 10%, hold to keep going).
     /// Dig, Add and Smooth work like the terrain Raise/Lower brush: they keep working while the mouse is held, at a
     /// speed set by Strength. Paint is applied once per brush spacing.
     /// </summary>
@@ -26,6 +26,10 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
         private bool _sizeKey;
         private bool _strengthKey;
+        private int _scaleDir;
+        private SceneView _scaleView;
+        private double _scaleStart;
+        private double _scaleLast;
         private Adjust _adjust;
         private float _adjustStartX;
         private float _adjustStartValue;
@@ -52,7 +56,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             Event e = Event.current;
             if (e.type == EventType.Layout) HandleUtility.AddDefaultControl(controlId);
 
-            HandleKeys(e);
+            HandleKeys(e, view);
 
             bool hit = Raycast(zones, HandleUtility.GUIPointToWorldRay(e.mousePosition), out DigZone hitZone, out Vector3 world, out Vector3 surfaceNormal);
             Vector3 axis = hit ? BrushAxis(view, surfaceNormal) : Vector3.up;
@@ -114,11 +118,12 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             if (_stroking) EndStroke();
             _adjust = Adjust.None;
             _sizeKey = _strengthKey = false;
+            StopScaling();
         }
 
         // ---------------------------------------------------------------- Input
 
-        private void HandleKeys(Event e)
+        private void HandleKeys(Event e, SceneView view)
         {
             if (e.type == EventType.KeyDown && GUIUtility.hotControl == 0 && !e.control && !e.command && !e.alt)
             {
@@ -126,15 +131,56 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 {
                     case KeyCode.A: _sizeKey = true; e.Use(); break;
                     case KeyCode.S: _strengthKey = true; e.Use(); break;
-                    case KeyCode.LeftBracket: DigBrushSettings.Radius *= 0.9f; e.Use(); break;
-                    case KeyCode.RightBracket: DigBrushSettings.Radius *= 1.1f; e.Use(); break;
+                    case KeyCode.LeftBracket: StartScaling(-1, view); e.Use(); break;
+                    case KeyCode.RightBracket: StartScaling(1, view); e.Use(); break;
                 }
             }
             else if (e.type == EventType.KeyUp)
             {
                 if (e.keyCode == KeyCode.A) _sizeKey = false;
                 if (e.keyCode == KeyCode.S) _strengthKey = false;
+                if (e.keyCode == KeyCode.LeftBracket && _scaleDir < 0 || e.keyCode == KeyCode.RightBracket && _scaleDir > 0) StopScaling();
             }
+        }
+
+        // [ and ]: a tap changes the size by 10%; holding the key keeps shrinking or growing it smoothly.
+        private const double ScaleHoldDelay = 0.25;
+        private const float ScalePerSecond = 2.5f;
+
+        private void StartScaling(int dir, SceneView view)
+        {
+            if (_scaleDir == dir) return; // the key repeating while held
+            StopScaling();
+            DigBrushSettings.Radius *= dir > 0 ? 1.1f : 0.9f;
+            _scaleDir = dir;
+            _scaleView = view;
+            _scaleStart = _scaleLast = EditorApplication.timeSinceStartup;
+            EditorApplication.update += ScaleTick;
+            view.Repaint();
+        }
+
+        private void StopScaling()
+        {
+            _scaleDir = 0;
+            _scaleView = null;
+            EditorApplication.update -= ScaleTick;
+        }
+
+        private void ScaleTick()
+        {
+            // The key-up can be missed if the view loses focus while the key is held.
+            if (_scaleView == null || EditorWindow.focusedWindow != _scaleView)
+            {
+                StopScaling();
+                return;
+            }
+            double now = EditorApplication.timeSinceStartup;
+            float dt = (float)(now - _scaleLast);
+            _scaleLast = now;
+            if (now - _scaleStart < ScaleHoldDelay) return;
+            DigBrushSettings.Radius *= Mathf.Pow(ScalePerSecond, _scaleDir * dt);
+            _scaleView.Repaint();
+            UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
         }
 
         private void HandleAdjust(Event e, int controlId, SceneView view)
@@ -291,7 +337,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                     ? DigEditorBrush.Offset(data, g, axis, r, amount / data.voxelSize, mask, mode == DigBrushMode.Dig, layer, _changed)
                     : DigEditorBrush.Apply(data, g, axis, r, amount, mask, mode, layer, _changed);
                 if (!changed) continue;
-                data.gridVersion++;
+                data.MarkChanged(_changed);
                 DigZoneBaker.RemeshRange(zone, _changed);
             }
         }

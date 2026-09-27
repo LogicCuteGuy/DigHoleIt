@@ -30,6 +30,18 @@ namespace LogicCuteGuy.DigHoleIt
         private byte[] _paint;
         private ChunkMesher _mesher;
         private Mesh[] _meshes;
+        private MeshFilter[] _created;
+        // What a chunk showed before its first runtime remesh, restored by ResetToBaked.
+        private BakedChunk[] _baked;
+
+        private struct BakedChunk
+        {
+            public MeshFilter Filter;
+            public Mesh Mesh;
+            public bool Enabled;
+            public int Lightmap;
+            public Vector4 LightmapST;
+        }
         private bool[] _dirty;
         private readonly List<int> _dirtyList = new List<int>();
         private readonly List<long> _log = new List<long>();
@@ -56,6 +68,8 @@ namespace LogicCuteGuy.DigHoleIt
             _paint = _data.HasPaintGrid ? (byte[])_data.paint.Clone() : new byte[_grid.Length];
             _mesher = new ChunkMesher(_data.chunkCells);
             _meshes = new Mesh[_data.ChunkCount];
+            _created = new MeshFilter[_data.ChunkCount];
+            _baked = new BakedChunk[_data.ChunkCount];
             _dirty = new bool[_data.ChunkCount];
         }
 
@@ -69,7 +83,7 @@ namespace LogicCuteGuy.DigHoleIt
 
         public void Add(Vector3 world, float radiusMeters) => LocalEdit(world, radiusMeters, DigFormat.OpAdd);
 
-        /// <summary>Paints <paramref name="layer"/> (DigFormat: 0 auto, 1-4 terrain layers, 5 dug soil) onto the voxels in the sphere.</summary>
+        /// <summary>Paints <paramref name="layer"/> (DigFormat: 0 auto, 1-4 terrain layers 0-3, 5 dug soil, 6-17 terrain layers 4-15) onto the voxels in the sphere.</summary>
         public void Paint(Vector3 world, float radiusMeters, int layer) => LocalEdit(world, radiusMeters, DigFormat.OpPaint, layer);
 
         /// <param name="layer">Paint layer for OpPaint, or the layer given to added soil for OpAdd (0 = leave as is).</param>
@@ -118,7 +132,28 @@ namespace LogicCuteGuy.DigHoleIt
             if (_data.HasPaintGrid) Array.Copy(_data.paint, _paint, _paint.Length);
             else Array.Clear(_paint, 0, _paint.Length);
             _log.Clear();
-            for (int i = 0; i < _dirty.Length; i++) MarkDirty(i);
+            foreach (int ci in _dirtyList) _dirty[ci] = false;
+            _dirtyList.Clear();
+
+            // The grid is the baked one again, so every remeshed chunk gets its baked mesh and lightmap back.
+            for (int ci = 0; ci < _meshes.Length; ci++)
+            {
+                if (_meshes[ci] == null) continue;
+                BakedChunk b = _baked[ci];
+                if (b.Filter == null) continue;
+                b.Filter.sharedMesh = b.Mesh;
+                if (b.Filter.TryGetComponent(out MeshRenderer rend))
+                {
+                    rend.enabled = b.Enabled;
+                    rend.lightmapIndex = b.Lightmap;
+                    rend.lightmapScaleOffset = b.LightmapST;
+                }
+                if (b.Filter.TryGetComponent(out MeshCollider col))
+                {
+                    col.sharedMesh = null;
+                    col.sharedMesh = b.Mesh;
+                }
+            }
         }
 
         /// <summary>Marching-ray hit against the grid, independent of physics. <paramref name="hit"/> is world space.</summary>
@@ -171,28 +206,53 @@ namespace LogicCuteGuy.DigHoleIt
 
         private void Rebuild(int ci)
         {
-            if (_zone.chunkFilters == null || ci >= _zone.chunkFilters.Length || _zone.chunkFilters[ci] == null) return;
-
             int cx = ci % _data.ChunksX;
             int cy = (ci / _data.ChunksX) % _data.ChunksY;
             int cz = ci / (_data.ChunksX * _data.ChunksY);
             _mesher.Build(_data, _grid, _paint, cx, cy, cz);
+            bool has = _mesher.IndexCount > 0;
+
+            // Only chunks with a baked surface have an object; others get one from the template when they need it.
+            MeshFilter filter = _created[ci];
+            int slot = filter == null ? _zone.ChunkSlot(ci) : -1;
+            if (slot >= 0) filter = _zone.chunkFilters[slot];
+            if (filter == null)
+            {
+                if (!has || _zone.chunkTemplate == null) return;
+                GameObject go = Instantiate(_zone.chunkTemplate, _zone.chunkTemplate.transform.parent, false);
+                go.name = $"Chunk_{cx}_{cy}_{cz}";
+                go.transform.localPosition = new Vector3(cx, cy, cz) * (_data.chunkCells * _data.voxelSize);
+                go.SetActive(true);
+                filter = _created[ci] = go.GetComponent<MeshFilter>();
+            }
 
             Mesh m = _meshes[ci];
             if (m == null)
             {
+                MeshRenderer bakedRend = filter.GetComponent<MeshRenderer>();
+                _baked[ci] = new BakedChunk
+                {
+                    Filter = filter,
+                    Mesh = filter.sharedMesh,
+                    Enabled = bakedRend != null && bakedRend.enabled && filter.sharedMesh != null,
+                    Lightmap = bakedRend != null ? bakedRend.lightmapIndex : -1,
+                    LightmapST = bakedRend != null ? bakedRend.lightmapScaleOffset : new Vector4(1, 1, 0, 0),
+                };
                 m = new Mesh { name = "DigChunk_" + ci };
                 m.MarkDynamic();
                 _meshes[ci] = m;
-                _zone.chunkFilters[ci].sharedMesh = m;
             }
-            bool has = _mesher.WriteTo(m);
+            filter.sharedMesh = m;
+            _mesher.WriteTo(m);
             if (has) m.RecalculateBounds();
 
-            MeshRenderer rend = _zone.chunkRenderers[ci];
-            if (rend != null) rend.enabled = has;
-            MeshCollider col = _zone.chunkColliders[ci];
-            if (col != null)
+            if (filter.TryGetComponent(out MeshRenderer rend))
+            {
+                rend.enabled = has;
+                // The baked lightmap no longer fits the new mesh: light it with light probes instead.
+                if (rend.lightmapIndex >= 0 && rend.lightmapIndex < 0xFFFE) rend.lightmapIndex = -1;
+            }
+            if (filter.TryGetComponent(out MeshCollider col))
             {
                 col.sharedMesh = null;
                 if (has) col.sharedMesh = m;

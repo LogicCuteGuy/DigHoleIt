@@ -15,6 +15,7 @@ namespace LogicCuteGuy.DigHoleIt
     ///   cellVert, vMask, vCell : CellBufferSize(n) ints
     ///   vPos, vNrm             : CellBufferSize(n) Vector3
     ///   vCol, vUv              : CellBufferSize(n) Color / Vector2 (paint weights, see BuildPaint)
+    ///   slots                  : SlotCount ints (painted layers of the chunk, see BuildPaint)
     ///   tris                   : TriBufferSize(n) ints
     /// </summary>
     public static class SurfaceNets
@@ -22,6 +23,31 @@ namespace LogicCuteGuy.DigHoleIt
         public static int CellBufferSize(int n) { int l = n + 1; return l * l * l; }
         public static int TriBufferSize(int n) { return n * n * n * 18; }
         public static int RowCount(int n) { int l = n + 1; return l * l; }
+
+        /// <summary>Painted terrain layers one chunk mesh can hold (besides dug soil).</summary>
+        public const int SlotCount = 4;
+
+        /// <summary>Clears the paint slots before building a chunk.</summary>
+        public static void ResetSlots(int[] slots)
+        {
+            for (int k = 0; k < SlotCount; k++) slots[k] = -1;
+        }
+
+        /// <summary>
+        /// The slots' terrain layers packed into one float for uv0.y: 1 + sum(layer_k * 16^k). The shader reads 0
+        /// (meshes built before slots existed) as slots 0, 1, 2, 3 = terrain layers 0-3.
+        /// </summary>
+        public static float PackSlots(int[] slots)
+        {
+            int packed = 0;
+            int scale = 1;
+            for (int k = 0; k < SlotCount; k++)
+            {
+                if (slots[k] > 0) packed += slots[k] * scale;
+                scale *= 16;
+            }
+            return packed + 1;
+        }
 
         /// <summary>
         /// Step 1: computes vertices for cell rows [rowStart, rowEnd) of RowCount(n) rows.
@@ -134,13 +160,15 @@ namespace LogicCuteGuy.DigHoleIt
 
         /// <summary>
         /// Optional step between 1 and 2: paint weights for vertices [vStart, vEnd), a trilinear blend of the layers of
-        /// the cell's 8 corner samples at the vertex position. <paramref name="vCol"/> receives the weights of terrain
-        /// layers 0-3 (paint values 1-4), <paramref name="vUv"/>.x the dug soil weight (5). What is left up to 1 is
-        /// "auto" shading. Unpainted vertices get zeros, so a zone that was never painted can skip this step and upload
-        /// zeros instead.
+        /// the cell's 8 corner samples at the vertex position. A chunk mesh holds up to <see cref="SlotCount"/> painted
+        /// terrain layers: the first ones met get the slots in <paramref name="slots"/> (reset them per chunk with
+        /// <see cref="ResetSlots"/>), and paint of further layers falls back to auto shading. <paramref name="vCol"/>
+        /// receives the slot weights, <paramref name="vUv"/>.x the dug soil weight. What is left up to 1 is "auto"
+        /// shading. Unpainted vertices get zeros, so a zone that was never painted can skip this step and upload zeros.
+        /// Finish with <see cref="FinishPaint"/>, which writes the slot layers into <paramref name="vUv"/>.y.
         /// </summary>
         public static void BuildPaint(byte[] paint, int nx, int ny, int ox, int oy, int oz, int n, float voxel,
-            int[] vCell, Vector3[] vPos, int vStart, int vEnd, Color[] vCol, Vector2[] vUv)
+            int[] vCell, Vector3[] vPos, int vStart, int vEnd, Color[] vCol, Vector2[] vUv, int[] slots)
         {
             int l = n + 1;
             int ll = l * l;
@@ -168,25 +196,49 @@ namespace LogicCuteGuy.DigHoleIt
                 float fx = Mathf.Clamp01(p.x * inv - lx);
                 float fy = Mathf.Clamp01(p.y * inv - ly);
                 float fz = Mathf.Clamp01(p.z * inv - lz);
-                float w1 = 0f, w2 = 0f, w3 = 0f, w4 = 0f, w5 = 0f;
+                float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f, soil = 0f;
 
                 for (int k = 0; k < 8; k++)
                 {
                     int bx = k & 1;
                     int by = (k >> 1) & 1;
                     int bz = (k >> 2) & 1;
-                    int layer = paint[i0 + bx + sx * by + sxy * bz];
-                    if (layer == 0) continue;
+                    int value = paint[i0 + bx + sx * by + sxy * bz];
+                    if (value == 0) continue;
                     float w = (bx == 1 ? fx : 1f - fx) * (by == 1 ? fy : 1f - fy) * (bz == 1 ? fz : 1f - fz);
-                    if (layer == 1) w1 += w;
-                    else if (layer == 2) w2 += w;
-                    else if (layer == 3) w3 += w;
-                    else if (layer == 4) w4 += w;
-                    else if (layer == 5) w5 += w;
+                    if (value == DigFormat.LayerDugSoil)
+                    {
+                        soil += w;
+                        continue;
+                    }
+                    int layer = DigFormat.TerrainLayerOf(value);
+                    if (layer < 0) continue;
+                    int slot = -1;
+                    for (int q = 0; q < SlotCount; q++)
+                    {
+                        if (slots[q] == layer) { slot = q; break; }
+                        if (slots[q] < 0) { slots[q] = layer; slot = q; break; }
+                    }
+                    if (slot == 0) w0 += w;
+                    else if (slot == 1) w1 += w;
+                    else if (slot == 2) w2 += w;
+                    else if (slot == 3) w3 += w;
                 }
 
-                vCol[v] = new Color(w1, w2, w3, w4);
-                vUv[v] = new Vector2(w5, 0f);
+                vCol[v] = new Color(w0, w1, w2, w3);
+                vUv[v] = new Vector2(soil, 0f);
+            }
+        }
+
+        /// <summary>After <see cref="BuildPaint"/>: writes the slot layers (<see cref="PackSlots"/>) into vUv.y of vertices [vStart, vEnd).</summary>
+        public static void FinishPaint(int[] slots, Vector2[] vUv, int vStart, int vEnd)
+        {
+            float packed = PackSlots(slots);
+            for (int v = vStart; v < vEnd; v++)
+            {
+                Vector2 u = vUv[v];
+                u.y = packed;
+                vUv[v] = u;
             }
         }
 

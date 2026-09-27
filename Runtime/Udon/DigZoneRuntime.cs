@@ -7,8 +7,13 @@ using Debug = UnityEngine.Debug;
 namespace LogicCuteGuy.DigHoleIt.Udon
 {
     /// <summary>
-    /// VRChat runtime for one baked Dig Zone. Owns the SDF grid, applies queued edits, and remeshes dirty chunks
-    /// within a per-frame time budget. Fields under "Baked" are written by the editor baker; do not edit by hand.
+    /// VRChat runtime for one baked Dig Zone. Applies queued edits and remeshes dirty chunks within a per-frame time
+    /// budget. Fields under "Baked" are written by the editor bridge; do not edit by hand.
+    ///
+    /// The grid is stored per chunk, run-length encoded, and a chunk is decoded only when an edit reaches it; until
+    /// then it keeps its baked mesh. So memory grows with the area players dig, not with the zone size, and a reset
+    /// just drops the decoded chunks. Chunks without a surface have no GameObject until an edit gives them one
+    /// (copied from <see cref="chunkTemplate"/>).
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.NoVariableSync)]
     public class DigZoneRuntime : UdonSharpBehaviour
@@ -19,10 +24,12 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         private const int PaintPerStep = 128;
 
         [Header("Baked")]
-        // Persisted by the baker; hidden because the inspector cannot draw a ~1 MB array usefully.
-        [HideInInspector] public byte[] grid;
-        [Tooltip("Paint layer per sample. Null when the zone was baked without paint.")]
-        [HideInInspector] public byte[] paint;
+        // Per-chunk run-length encoded grids (DigChunkPacker); hidden because the inspector cannot draw them usefully.
+        [HideInInspector] public byte[] chunkRle;
+        [HideInInspector] public int[] chunkOffsets;
+        [HideInInspector] public byte[] paintRle;
+        [HideInInspector] public int[] paintOffsets;
+        [Tooltip("False when the zone was baked without paint.")]
         public bool hasPaint;
         public int nx;
         public int ny;
@@ -34,9 +41,13 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         public int chunksZ;
         public int[] editBox;
         public float maxBrushRadius = 3f;
+        // Chunk index of each entry in the chunk arrays below. Only chunks with a baked surface have an object.
+        [HideInInspector] public int[] chunkIds;
         public MeshFilter[] chunkFilters;
         public MeshRenderer[] chunkRenderers;
         public MeshCollider[] chunkColliders;
+        [Tooltip("Inactive chunk object copied when an edit gives an empty chunk a surface.")]
+        public GameObject chunkTemplate;
 
         [Header("Runtime")]
         [Tooltip("Optional. Without it, edits stay local to this player.")]
@@ -47,10 +58,30 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         public float budgetMsMobile = 1.2f;
         public bool logTimings;
 
-        private bool _ready;
-        private byte[] _original;
-        private byte[] _originalPaint;
-        private bool _paintUsed;
+        private bool _started;
+        private bool _failed;
+        private int _count;
+
+        // Decoded chunks: the samples DigFormat.ChunkSamples gives, x fastest. Null until an edit reaches the chunk.
+        private byte[][] _cg;
+        private byte[][] _cp;
+        private int[] _decoded;
+        private int _decodedCount;
+        private int[] _dec;
+        private int[] _r;
+        private int[] _er;
+        private int[] _box;
+        private byte[] _noPaint;
+
+        private MeshFilter[] _filters;
+        private MeshRenderer[] _renderers;
+        private MeshCollider[] _colliders;
+        private Mesh[] _bakedMesh;
+        private Mesh[] _bakedCol;
+        private bool[] _bakedOn;
+        private int[] _bakedLightmap;
+        private Vector4[] _bakedLightmapST;
+
         private long[] _queue;
         private int _qHead;
         private int _qCount;
@@ -69,9 +100,15 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         private Vector3[] _vNrm;
         private Color[] _vCol;
         private Vector2[] _vUv;
+        private int[] _slots;
 
         private bool _meshing;
         private int _meshChunk;
+        private byte[] _mGrid;
+        private byte[] _mPaint;
+        private int _lnx;
+        private int _lny;
+        private int _lnz;
         private int _phase;
         private int _row;
         private int _rowCount;
@@ -89,28 +126,69 @@ namespace LogicCuteGuy.DigHoleIt.Udon
 
         private void Start()
         {
-            int chunkCount = chunksX * chunksY * chunksZ;
-            if (grid == null || grid.Length != (nx + 1) * (ny + 1) * (nz + 1) || chunkCount == 0 || editBox == null || editBox.Length != 6)
+            _Init();
+        }
+
+        /// <summary>Allocates the runtime state. Safe to call more than once (DigSync may call first).</summary>
+        private void _Init()
+        {
+            if (_started) return;
+            _started = true;
+
+            _count = chunksX * chunksY * chunksZ;
+            if (_count <= 0 || nx <= 0 || ny <= 0 || nz <= 0 || chunkOffsets == null || chunkOffsets.Length != _count ||
+                editBox == null || editBox.Length != 6)
             {
                 Debug.LogError("[DigHoleIt] DigZoneRuntime has no baked data. Bake the Dig Zone in the editor.", this);
+                _failed = true;
                 return;
             }
+            if (hasPaint && (paintOffsets == null || paintOffsets.Length != _count)) hasPaint = false;
 
-            _original = new byte[grid.Length];
-            System.Array.Copy(grid, _original, grid.Length);
-            if (paint == null || paint.Length != grid.Length)
+            _cg = new byte[_count][];
+            _cp = new byte[_count][];
+            _decoded = new int[_count];
+            _dec = new int[DigRle.StateSize];
+            _r = new int[6];
+            _er = new int[6];
+            _box = new int[6];
+            _noPaint = new byte[0];
+
+            _filters = new MeshFilter[_count];
+            _renderers = new MeshRenderer[_count];
+            _colliders = new MeshCollider[_count];
+            _bakedMesh = new Mesh[_count];
+            _bakedCol = new Mesh[_count];
+            _bakedOn = new bool[_count];
+            _bakedLightmap = new int[_count];
+            _bakedLightmapST = new Vector4[_count];
+            if (chunkIds != null && chunkFilters != null)
             {
-                paint = new byte[grid.Length];
-                hasPaint = false;
+                for (int k = 0; k < chunkIds.Length && k < chunkFilters.Length; k++)
+                {
+                    int ci = chunkIds[k];
+                    if (ci < 0 || ci >= _count || chunkFilters[k] == null) continue;
+                    _filters[ci] = chunkFilters[k];
+                    _bakedMesh[ci] = chunkFilters[k].sharedMesh;
+                    if (chunkRenderers != null && k < chunkRenderers.Length && chunkRenderers[k] != null)
+                    {
+                        _renderers[ci] = chunkRenderers[k];
+                        _bakedOn[ci] = chunkRenderers[k].enabled;
+                        _bakedLightmap[ci] = chunkRenderers[k].lightmapIndex;
+                        _bakedLightmapST[ci] = chunkRenderers[k].lightmapScaleOffset;
+                    }
+                    if (chunkColliders != null && k < chunkColliders.Length && chunkColliders[k] != null)
+                    {
+                        _colliders[ci] = chunkColliders[k];
+                        _bakedCol[ci] = chunkColliders[k].sharedMesh;
+                    }
+                }
             }
-            _originalPaint = new byte[grid.Length];
-            System.Array.Copy(paint, _originalPaint, grid.Length);
-            _paintUsed = hasPaint;
 
             _queue = new long[QueueCapacity];
-            _dirty = new bool[chunkCount];
-            _dirtyList = new int[chunkCount];
-            _meshes = new Mesh[chunkCount];
+            _dirty = new bool[_count];
+            _dirtyList = new int[_count];
+            _meshes = new Mesh[_count];
             _changed = new int[6];
 
             int cells = SurfaceNets.CellBufferSize(chunkCells);
@@ -121,6 +199,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             _vNrm = new Vector3[cells];
             _vCol = new Color[cells];
             _vUv = new Vector2[cells];
+            _slots = new int[SurfaceNets.SlotCount];
             _tris = new int[SurfaceNets.TriBufferSize(chunkCells)];
             _rowCount = SurfaceNets.RowCount(chunkCells);
 
@@ -130,14 +209,107 @@ namespace LogicCuteGuy.DigHoleIt.Udon
 #else
             _budget = budgetMsDesktop;
 #endif
-            _ready = true;
+        }
+
+        /// <summary>Puts the samples chunk <paramref name="ci"/> holds into _r: {x0, y0, z0, x1, y1, z1}, inclusive.</summary>
+        private void _SetRange(int ci)
+        {
+            int x0, x1, y0, y1, z0, z1;
+            DigFormat.ChunkSamples(ci % chunksX, chunkCells, nx, out x0, out x1);
+            DigFormat.ChunkSamples((ci / chunksX) % chunksY, chunkCells, ny, out y0, out y1);
+            DigFormat.ChunkSamples(ci / (chunksX * chunksY), chunkCells, nz, out z0, out z1);
+            _r[0] = x0; _r[1] = y0; _r[2] = z0;
+            _r[3] = x1; _r[4] = y1; _r[5] = z1;
+        }
+
+        /// <summary>Decodes chunk <paramref name="ci"/> if it is not decoded yet. False if the data is corrupt.</summary>
+        private bool _EnsureChunk(int ci)
+        {
+            if (_cg[ci] != null) return true;
+            _SetRange(ci);
+            int len = (_r[3] - _r[0] + 1) * (_r[4] - _r[1] + 1) * (_r[5] - _r[2] + 1);
+            byte[] g = new byte[len];
+            if (!DigRle.DecodeChunk(chunkRle, chunkOffsets, ci, g, _dec, true))
+            {
+                Debug.LogError("[DigHoleIt] DigZoneRuntime has a corrupt grid. Bake the Dig Zone again.", this);
+                _failed = true;
+                return false;
+            }
+            // Offset -1 is a chunk whose paint is all zero: it gets a paint array only once something is painted.
+            if (hasPaint && paintOffsets[ci] != -1)
+            {
+                byte[] p = new byte[len];
+                if (!DigRle.DecodeChunk(paintRle, paintOffsets, ci, p, _dec, true))
+                {
+                    Debug.LogError("[DigHoleIt] DigZoneRuntime has corrupt paint. Bake the Dig Zone again.", this);
+                    _failed = true;
+                    return false;
+                }
+                _cp[ci] = p;
+            }
+            _cg[ci] = g;
+            _decoded[_decodedCount] = ci;
+            _decodedCount++;
+            return true;
+        }
+
+        /// <summary>
+        /// Puts the chunks an edit at <paramref name="p"/> (grid units) may change into _er: {cx0, cy0, cz0, cx1, cy1, cz1}.
+        /// False if the edit lies outside the editable box.
+        /// </summary>
+        private bool _EditChunks(Vector3 p, float r)
+        {
+            float reach = r + DigFormat.SdfBand;
+            int x0 = Mathf.Max(editBox[0], Mathf.FloorToInt(p.x - reach));
+            int y0 = Mathf.Max(editBox[1], Mathf.FloorToInt(p.y - reach));
+            int z0 = Mathf.Max(editBox[2], Mathf.FloorToInt(p.z - reach));
+            int x1 = Mathf.Min(editBox[3], Mathf.CeilToInt(p.x + reach));
+            int y1 = Mathf.Min(editBox[4], Mathf.CeilToInt(p.y + reach));
+            int z1 = Mathf.Min(editBox[5], Mathf.CeilToInt(p.z + reach));
+            if (x0 > x1 || y0 > y1 || z0 > z1) return false;
+            int a, b;
+            DigFormat.AffectedChunks(x0, x1, chunkCells, chunksX, out a, out b);
+            _er[0] = a; _er[3] = b;
+            DigFormat.AffectedChunks(y0, y1, chunkCells, chunksY, out a, out b);
+            _er[1] = a; _er[4] = b;
+            DigFormat.AffectedChunks(z0, z1, chunkCells, chunksZ, out a, out b);
+            _er[2] = a; _er[5] = b;
+            return true;
+        }
+
+        /// <summary>Decodes the chunks an edit needs. False if the frame budget ran out first (call again next frame).</summary>
+        private bool _PrepareEdit(long e)
+        {
+            Vector3 p;
+            float r;
+            int op;
+            DigFormat.Unpack(e, out p, out r, out op);
+            if (!_EditChunks(p, r)) return true;
+            for (int cz = _er[2]; cz <= _er[5]; cz++)
+                for (int cy = _er[1]; cy <= _er[4]; cy++)
+                    for (int cx = _er[0]; cx <= _er[3]; cx++)
+                    {
+                        int ci = cx + chunksX * (cy + chunksY * cz);
+                        if (_cg[ci] != null) continue;
+                        if (!_EnsureChunk(ci)) return true;
+                        if (_Elapsed() >= _budget) return false;
+                    }
+            return true;
         }
 
         // ---- Public API (local calls only: names start with '_' so they are not network-callable) ----
 
-        public bool _IsReady() { return _ready; }
+        /// <summary>True once the runtime has valid baked data. Chunks are decoded later, when edits reach them.</summary>
+        public bool _IsReady()
+        {
+            _Init();
+            return !_failed;
+        }
 
         public bool _IsBusy() { return _qCount > 0 || _dirtyCount > 0 || _meshing; }
+
+        /// <summary>Chunks decoded so far: the ones edits have reached since the last reset.</summary>
+        public int _DecodedChunkCount() { return _decodedCount; }
 
         public bool _ContainsWorld(Vector3 world)
         {
@@ -148,12 +320,23 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         /// <summary>True if the nearest grid sample to <paramref name="world"/> is solid.</summary>
         public bool _IsSolidAt(Vector3 world)
         {
-            if (!_ready || !_ContainsWorld(world)) return false;
+            if (!_IsReady() || !_ContainsWorld(world)) return false;
             Vector3 g = (world - transform.position) / voxelSize;
             int x = Mathf.RoundToInt(g.x);
             int y = Mathf.RoundToInt(g.y);
             int z = Mathf.RoundToInt(g.z);
-            return grid[x + (nx + 1) * (y + (ny + 1) * z)] < 128;
+            int ci = Mathf.Min(x / chunkCells, chunksX - 1)
+                   + chunksX * (Mathf.Min(y / chunkCells, chunksY - 1) + chunksY * Mathf.Min(z / chunkCells, chunksZ - 1));
+            if (_cg[ci] == null)
+            {
+                int off = chunkOffsets[ci];
+                if (off < 0) return -1 - off < 128; // uniform chunk: no need to decode it
+                if (!_EnsureChunk(ci)) return false;
+            }
+            _SetRange(ci);
+            int w = _r[3] - _r[0] + 1;
+            int h = _r[4] - _r[1] + 1;
+            return _cg[ci][(x - _r[0]) + w * ((y - _r[1]) + h * (z - _r[2]))] < 128;
         }
 
         public long _PackWorld(Vector3 world, float radiusMeters, int op)
@@ -170,11 +353,11 @@ namespace LogicCuteGuy.DigHoleIt.Udon
 
         /// <summary>
         /// Like _LocalEdit with a paint layer: the layer to paint for op 3 (paint), or the layer given to added soil for
-        /// op 1 (add, 0 = leave as is). Layers: 0 auto, 1-4 terrain layers 0-3, 5 dug soil.
+        /// op 1 (add, 0 = leave as is). Layers: 0 auto, 1-4 terrain layers 0-3, 5 dug soil, 6-17 terrain layers 4-15 (DigFormat.PaintValue).
         /// </summary>
         public void _LocalEditLayer(Vector3 world, float radiusMeters, int op, int layer)
         {
-            if (!_ready || !_ContainsWorld(world)) return;
+            if (!_IsReady() || !_ContainsWorld(world)) return;
             float r = Mathf.Min(radiusMeters, maxBrushRadius) / voxelSize;
             long e = DigFormat.PackLayer((world - transform.position) / voxelSize, r, op, layer);
             if (sync != null) sync._Submit(e);
@@ -194,9 +377,11 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             return p.x <= nx && p.y <= ny && p.z <= nz;
         }
 
+        /// <summary>Queues an edit. The chunks it reaches are decoded first, within the frame budget.</summary>
         public void _EnqueueEdit(long e)
         {
-            if (!_ready) return;
+            _Init();
+            if (_failed) return;
             if (_qCount >= QueueCapacity)
             {
                 _ApplyNow(e);
@@ -206,23 +391,50 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             _qCount++;
         }
 
-        /// <summary>Restores the baked grid and remeshes every chunk.</summary>
+        /// <summary>
+        /// Restores the baked grid: drops every decoded chunk and puts the baked meshes back, so it costs nothing per
+        /// sample. Edits queued after this call are applied on top.
+        /// </summary>
         public void _ResetToOriginal()
         {
-            if (!_ready) return;
-            System.Array.Copy(_original, grid, grid.Length);
-            System.Array.Copy(_originalPaint, paint, paint.Length);
-            _paintUsed = hasPaint;
+            _Init();
+            if (_failed) return;
             _qCount = 0;
-            int count = chunksX * chunksY * chunksZ;
-            for (int i = 0; i < count; i++) _MarkDirty(i);
+            _meshing = false;
+            while (_dirtyCount > 0)
+            {
+                _dirtyCount--;
+                _dirty[_dirtyList[_dirtyCount]] = false;
+            }
+            for (int k = 0; k < _decodedCount; k++)
+            {
+                int ci = _decoded[k];
+                _cg[ci] = null;
+                _cp[ci] = null;
+                Mesh m = _meshes[ci];
+                if (m == null) continue;
+                m.Clear();
+                if (_filters[ci] != null) _filters[ci].sharedMesh = _bakedMesh[ci];
+                if (_renderers[ci] != null)
+                {
+                    _renderers[ci].enabled = _bakedOn[ci];
+                    _renderers[ci].lightmapIndex = _bakedLightmap[ci];
+                    _renderers[ci].lightmapScaleOffset = _bakedLightmapST[ci];
+                }
+                if (_colliders[ci] != null)
+                {
+                    _colliders[ci].sharedMesh = null;
+                    _colliders[ci].sharedMesh = _bakedCol[ci];
+                }
+            }
+            _decodedCount = 0;
         }
 
         // ---- Frame loop ----
 
         private void Update()
         {
-            if (!_ready || (_qCount == 0 && _dirtyCount == 0 && !_meshing)) return;
+            if (_failed || (_qCount == 0 && _dirtyCount == 0 && !_meshing)) return;
 
             _sw.Reset();
             _sw.Start();
@@ -230,9 +442,11 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             while (_qCount > 0)
             {
                 long e = _queue[_qHead];
+                if (!_PrepareEdit(e)) return;
                 _qHead = (_qHead + 1) % QueueCapacity;
                 _qCount--;
                 _ApplyNow(e);
+                if (_failed) return;
                 if (_Elapsed() >= _budget) return;
             }
 
@@ -255,6 +469,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             return (float)_sw.Elapsed.TotalMilliseconds;
         }
 
+        /// <summary>Stamps an edit into every chunk it reaches (decoding them if needed) and marks the changed ones dirty.</summary>
         private void _ApplyNow(long e)
         {
             Vector3 p;
@@ -263,17 +478,44 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             DigFormat.Unpack(e, out p, out r, out op);
             int layer = DigFormat.UnpackLayer(e);
             if (op != DigFormat.OpDig && op != DigFormat.OpAdd && op != DigFormat.OpPaint) return;
-            if (!DigBrush.Stamp(grid, paint, nx, ny, editBox, p.x, p.y, p.z, r, op, layer, _changed)) return;
-            if (op == DigFormat.OpPaint || (op == DigFormat.OpAdd && layer > 0)) _paintUsed = true;
+            if (!_EditChunks(p, r)) return;
+            bool paints = op == DigFormat.OpPaint || (op == DigFormat.OpAdd && layer > 0);
 
-            int cx0, cx1, cy0, cy1, cz0, cz1;
-            DigFormat.AffectedChunks(_changed[0], _changed[3], chunkCells, chunksX, out cx0, out cx1);
-            DigFormat.AffectedChunks(_changed[1], _changed[4], chunkCells, chunksY, out cy0, out cy1);
-            DigFormat.AffectedChunks(_changed[2], _changed[5], chunkCells, chunksZ, out cz0, out cz1);
-            for (int cz = cz0; cz <= cz1; cz++)
-                for (int cy = cy0; cy <= cy1; cy++)
-                    for (int cx = cx0; cx <= cx1; cx++)
-                        _MarkDirty(cx + chunksX * (cy + chunksY * cz));
+            // Neighbouring chunks share their border samples, and every copy gets the same edit, so they stay equal.
+            for (int cz = _er[2]; cz <= _er[5]; cz++)
+                for (int cy = _er[1]; cy <= _er[4]; cy++)
+                    for (int cx = _er[0]; cx <= _er[3]; cx++)
+                    {
+                        int ci = cx + chunksX * (cy + chunksY * cz);
+                        if (!_EnsureChunk(ci)) return;
+                        _SetRange(ci);
+                        _box[0] = Mathf.Max(editBox[0], _r[0]) - _r[0];
+                        _box[1] = Mathf.Max(editBox[1], _r[1]) - _r[1];
+                        _box[2] = Mathf.Max(editBox[2], _r[2]) - _r[2];
+                        _box[3] = Mathf.Min(editBox[3], _r[3]) - _r[0];
+                        _box[4] = Mathf.Min(editBox[4], _r[4]) - _r[1];
+                        _box[5] = Mathf.Min(editBox[5], _r[5]) - _r[2];
+                        if (_box[0] > _box[3] || _box[1] > _box[4] || _box[2] > _box[5]) continue;
+
+                        // Paint lands only inside the sphere; a chunk the sphere misses gets an empty stand-in,
+                        // which the brush never indexes.
+                        byte[] pg = _cp[ci];
+                        if (paints && pg == null)
+                        {
+                            bool inside = p.x + r >= _r[0] - 1 && p.x - r <= _r[3] + 1 && p.y + r >= _r[1] - 1 &&
+                                          p.y - r <= _r[4] + 1 && p.z + r >= _r[2] - 1 && p.z - r <= _r[5] + 1;
+                            if (inside)
+                            {
+                                pg = new byte[_cg[ci].Length];
+                                _cp[ci] = pg;
+                            }
+                            else pg = _noPaint;
+                        }
+
+                        if (DigBrush.Stamp(_cg[ci], pg, _r[3] - _r[0], _r[4] - _r[1], _box,
+                                p.x - _r[0], p.y - _r[1], p.z - _r[2], r, op, layer, _changed))
+                            _MarkDirty(ci);
+                    }
         }
 
         private void _MarkDirty(int ci)
@@ -319,14 +561,22 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         private void _BeginChunk(int ci)
         {
             _meshChunk = ci;
-            _ox = (ci % chunksX) * chunkCells;
-            _oy = ((ci / chunksX) % chunksY) * chunkCells;
-            _oz = (ci / (chunksX * chunksY)) * chunkCells;
+            _SetRange(ci);
+            _mGrid = _cg[ci];
+            _mPaint = _cp[ci];
+            _lnx = _r[3] - _r[0];
+            _lny = _r[4] - _r[1];
+            _lnz = _r[5] - _r[2];
+            // Chunk origin relative to the chunk's own samples.
+            _ox = (ci % chunksX) * chunkCells - _r[0];
+            _oy = ((ci / chunksX) % chunksY) * chunkCells - _r[1];
+            _oz = (ci / (chunksX * chunksY)) * chunkCells - _r[2];
             _phase = 0;
             _row = 0;
             _vertCount = 0;
             _quadV = 0;
             _paintV = 0;
+            SurfaceNets.ResetSlots(_slots);
             _triCount = 0;
             _chunkMs = 0f;
             _meshing = true;
@@ -337,13 +587,13 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             if (_phase == 0)
             {
                 int end = Mathf.Min(_row + RowsPerStep, _rowCount);
-                _vertCount = SurfaceNets.BuildRows(grid, nx, ny, nz, _ox, _oy, _oz, chunkCells, voxelSize,
+                _vertCount = SurfaceNets.BuildRows(_mGrid, _lnx, _lny, _lnz, _ox, _oy, _oz, chunkCells, voxelSize,
                     _row, end, _cellVert, _vPos, _vNrm, _vMask, _vCell, _vertCount);
                 _row = end;
                 if (_row >= _rowCount)
                 {
                     _phase = 1;
-                    if (!_paintUsed)
+                    if (_mPaint == null)
                     {
                         // Never painted: upload zero weights (auto shading everywhere).
                         System.Array.Clear(_vCol, 0, _vertCount);
@@ -357,8 +607,22 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             if (_phase == 1)
             {
                 int end = Mathf.Min(_paintV + PaintPerStep, _vertCount);
-                SurfaceNets.BuildPaint(paint, nx, ny, _ox, _oy, _oz, chunkCells, voxelSize,
-                    _vCell, _vPos, _paintV, end, _vCol, _vUv);
+                SurfaceNets.BuildPaint(_mPaint, _lnx, _lny, _ox, _oy, _oz, chunkCells, voxelSize,
+                    _vCell, _vPos, _paintV, end, _vCol, _vUv, _slots);
+                _paintV = end;
+                if (_paintV >= _vertCount)
+                {
+                    _phase = 4;
+                    _paintV = 0;
+                }
+                return;
+            }
+
+            if (_phase == 4)
+            {
+                // Every vertex carries the chunk's slot layers, known only once all paint is read.
+                int end = Mathf.Min(_paintV + PaintPerStep * 8, _vertCount);
+                SurfaceNets.FinishPaint(_slots, _vUv, _paintV, end);
                 _paintV = end;
                 if (_paintV >= _vertCount) _phase = 2;
                 return;
@@ -377,13 +641,34 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             _meshing = false;
         }
 
+        /// <summary>Gives chunk <paramref name="ci"/> a GameObject copied from <see cref="chunkTemplate"/>.</summary>
+        private bool _CreateChunkObject(int ci)
+        {
+            if (chunkTemplate == null) return false;
+            int cx = ci % chunksX;
+            int cy = (ci / chunksX) % chunksY;
+            int cz = ci / (chunksX * chunksY);
+            GameObject go = Instantiate(chunkTemplate, chunkTemplate.transform.parent);
+            go.name = "Chunk_" + cx + "_" + cy + "_" + cz;
+            go.transform.localPosition = new Vector3(cx, cy, cz) * (chunkCells * voxelSize);
+            go.SetActive(true);
+            _filters[ci] = go.GetComponent<MeshFilter>();
+            _renderers[ci] = go.GetComponent<MeshRenderer>();
+            _colliders[ci] = go.GetComponent<MeshCollider>();
+            return _filters[ci] != null;
+        }
+
         private void _Upload()
         {
             int ci = _meshChunk;
-            MeshFilter filter = chunkFilters[ci];
-            if (filter == null) return;
-            MeshRenderer rend = chunkRenderers[ci];
-            MeshCollider col = chunkColliders[ci];
+            MeshFilter filter = _filters[ci];
+            if (filter == null)
+            {
+                if (_triCount == 0 || !_CreateChunkObject(ci)) return;
+                filter = _filters[ci];
+            }
+            MeshRenderer rend = _renderers[ci];
+            MeshCollider col = _colliders[ci];
 
             Mesh m = _meshes[ci];
             if (m == null)
@@ -392,9 +677,9 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 m = new Mesh();
                 m.name = "DigChunk_" + ci;
                 _meshes[ci] = m;
-                filter.sharedMesh = m;
             }
             m.Clear();
+            filter.sharedMesh = m;
 
             if (_triCount == 0)
             {
@@ -421,7 +706,12 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 col.sharedMesh = null;
                 col.sharedMesh = m;
             }
-            if (rend != null) rend.enabled = true;
+            if (rend != null)
+            {
+                rend.enabled = true;
+                // The baked lightmap no longer fits the new mesh: light it with light probes instead.
+                if (rend.lightmapIndex >= 0 && rend.lightmapIndex < 0xFFFE) rend.lightmapIndex = -1;
+            }
 
             if (logTimings)
                 Debug.Log("[DigHoleIt] chunk " + ci + ": " + _vertCount + " verts, " + (_triCount / 3) + " tris, " + _chunkMs.ToString("F2") + " ms");

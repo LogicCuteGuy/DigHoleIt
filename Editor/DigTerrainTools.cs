@@ -155,6 +155,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             }
             DigBrushGUI.BrushFields(false);
             editContext.ShowBrushesGUI(5, BrushGUIEditFlags.Select, 0);
+            DigCredit.Draw();
         }
 
         public override void OnSceneGUI(Terrain terrain, IOnSceneGUI editContext)
@@ -191,6 +192,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             DigBrushSettings.PaintLayer = DigBrushGUI.LayerGrid(DigBrushSettings.PaintLayer, zone, false);
             DigBrushGUI.BrushFields(false);
             editContext.ShowBrushesGUI(5, BrushGUIEditFlags.Select, 0);
+            DigCredit.Draw();
         }
 
         public override void OnSceneGUI(Terrain terrain, IOnSceneGUI editContext)

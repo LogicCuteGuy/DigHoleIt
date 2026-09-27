@@ -26,7 +26,11 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         /// <summary>Raised after the grid changed without a rebuild (sculpt strokes, undo).</summary>
         public static event Action<DigZone> GridChanged;
 
-        public static void NotifyGridChanged(DigZone zone) => GridChanged?.Invoke(zone);
+        public static void NotifyGridChanged(DigZone zone)
+        {
+            FlushLightmapUVs();
+            GridChanged?.Invoke(zone);
+        }
 
         /// <summary>
         /// True while the baker itself changes terrains or re-syncs a zone to a terrain edit. Terrain callbacks are
@@ -198,7 +202,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
             Baked?.Invoke(zone);
             Debug.Log($"[DigHoleIt] Baked '{zone.name}': {zone.cells.x}x{zone.cells.y}x{zone.cells.z} cells, " +
-                      $"{zone.data.ChunkCount} chunks, grid {zone.data.grid.Length / 1024} KB.", zone);
+                      $"{zone.data.ChunkCount} chunks, grid {zone.data.grid.Length / 1024} KB ({zone.data.StoredBytes / 1024} KB stored).", zone);
             return true;
         }
 
@@ -207,7 +211,13 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             error = null;
             if (zone.terrain == null || zone.terrain.terrainData == null) { error = "Assign a Terrain with TerrainData."; return false; }
             if (zone.cells.x < 8 || zone.cells.y < 4 || zone.cells.z < 8) { error = "Cells must be at least 8 x 4 x 8."; return false; }
-            if ((long)(zone.cells.x + 1) * (zone.cells.y + 1) * (zone.cells.z + 1) > 16_000_000) { error = "Grid is too large (over 16M samples)."; return false; }
+            long samples = (long)(zone.cells.x + 1) * (zone.cells.y + 1) * (zone.cells.z + 1);
+            if (samples > DigZone.MaxSamples)
+            {
+                error = $"The grid is too large: {samples / 1_000_000} million samples, the limit is {DigZone.MaxSamples / 1_000_000} million. " +
+                        "Make the zone smaller, split it into several zones, or use bigger voxels.";
+                return false;
+            }
             if (zone.cells.x * 16 > 65535 || zone.cells.y * 16 > 65535 || zone.cells.z * 16 > 65535) { error = "Cells per axis must be at most 4095."; return false; }
 
             Terrain t = zone.terrain;
@@ -537,9 +547,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
                 if (textures)
                 {
-                    Color32[] before = ReadPixels(data.controlTex);
+                    Color32[] before = ReadControl(data);
                     BakeControl(zone, data, zone.terrain.terrainData);
-                    Color32[] after = ReadPixels(data.controlTex);
+                    Color32[] after = ReadControl(data);
                     bool same = before != null && after != null && before.Length == after.Length;
                     for (int i = 0; same && i < before.Length; i++)
                         same = before[i].r == after[i].r && before[i].g == after[i].g && before[i].b == after[i].b && before[i].a == after[i].a;
@@ -556,6 +566,23 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             {
                 Busy = wasBusy;
             }
+        }
+
+        /// <summary>The pixels of every control texture, one after another (null if one can't be read).</summary>
+        private static Color32[] ReadControl(DigZoneData data)
+        {
+            var all = new List<Color32>();
+            Color32[] first = ReadPixels(data.controlTex);
+            if (first == null) return null;
+            all.AddRange(first);
+            if (data.extraControlTex != null)
+                foreach (Texture2D t in data.extraControlTex)
+                {
+                    Color32[] px = ReadPixels(t);
+                    if (px == null) return null;
+                    all.AddRange(px);
+                }
+            return all.ToArray();
         }
 
         private static Color32[] ReadPixels(Texture2D tex)
@@ -644,29 +671,44 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             int az1 = Mathf.Clamp(Mathf.CeilToInt((b.max.z - tp.z) * scaleZ) + 1, 0, res - 1);
             int w = ax1 - ax0 + 1, h = az1 - az0 + 1;
 
-            var colors = new Color[w * h];
-            if (layers > 0)
+            // One RGBA texture per 4 terrain layers: controlTex for layers 0-3, extraControlTex for the rest.
+            int used = Mathf.Min(layers, DigFormat.MaxTerrainLayers);
+            int textures = Mathf.Max(1, (used + 3) / 4);
+            float[,,] maps = layers > 0 ? td.GetAlphamaps(ax0, az0, w, h) : null;
+            var extra = new Texture2D[textures - 1];
+            for (int t = 0; t < textures; t++)
             {
-                float[,,] maps = td.GetAlphamaps(ax0, az0, w, h);
-                for (int j = 0; j < h; j++)
-                for (int i = 0; i < w; i++)
+                var colors = new Color[w * h];
+                if (maps == null)
                 {
-                    colors[i + j * w] = new Color(
-                        maps[j, i, 0],
-                        layers > 1 ? maps[j, i, 1] : 0f,
-                        layers > 2 ? maps[j, i, 2] : 0f,
-                        layers > 3 ? maps[j, i, 3] : 0f);
+                    if (t == 0) for (int k = 0; k < colors.Length; k++) colors[k] = Color.red;
                 }
-            }
-            else
-            {
-                for (int k = 0; k < colors.Length; k++) colors[k] = Color.red;
-            }
+                else
+                {
+                    int l0 = t * 4;
+                    for (int j = 0; j < h; j++)
+                    for (int i = 0; i < w; i++)
+                    {
+                        colors[i + j * w] = new Color(
+                            l0 < used ? maps[j, i, l0] : 0f,
+                            l0 + 1 < used ? maps[j, i, l0 + 1] : 0f,
+                            l0 + 2 < used ? maps[j, i, l0 + 2] : 0f,
+                            l0 + 3 < used ? maps[j, i, l0 + 3] : 0f);
+                    }
+                }
 
-            Texture2D tex = ReplaceSubTexture(data, data.controlTex, "Control", w, h, TextureFormat.RGBA32);
-            tex.SetPixels(colors);
-            tex.Apply(false, false);
-            data.controlTex = tex;
+                Texture2D old = t == 0 ? data.controlTex : data.extraControlTex != null && t - 1 < data.extraControlTex.Length ? data.extraControlTex[t - 1] : null;
+                Texture2D tex = ReplaceSubTexture(data, old, t == 0 ? "Control" : "Control" + t, w, h, TextureFormat.RGBA32);
+                tex.SetPixels(colors);
+                tex.Apply(false, false);
+                if (t == 0) data.controlTex = tex;
+                else extra[t - 1] = tex;
+            }
+            if (data.extraControlTex != null)
+                for (int t = extra.Length; t < data.extraControlTex.Length; t++)
+                    if (data.extraControlTex[t] != null) UnityEngine.Object.DestroyImmediate(data.extraControlTex[t], true);
+            data.extraControlTex = extra;
+            data.layerCount = used;
 
             data.controlST = new Vector4(
                 scaleX / w,
@@ -746,11 +788,21 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
             Terrain t = zone.terrain;
             TerrainLayer[] layers = t != null && t.terrainData != null ? t.terrainData.terrainLayers : Array.Empty<TerrainLayer>();
-            for (int i = 0; i < 4; i++)
+            int count = Mathf.Min(layers.Length, DigFormat.MaxTerrainLayers);
+            // Shader variant by layer count: 4, 8, 12 or 16 layers.
+            string keyword = count > 12 ? "_DIGLAYERS_16" : count > 8 ? "_DIGLAYERS_12" : count > 4 ? "_DIGLAYERS_8" : null;
+            foreach (string k in new[] { "_DIGLAYERS_8", "_DIGLAYERS_12", "_DIGLAYERS_16" })
             {
+                if (k == keyword) mat.EnableKeyword(k);
+                else mat.DisableKeyword(k);
+            }
+
+            for (int i = 0; i < DigFormat.MaxTerrainLayers; i++)
+            {
+                if (!mat.HasProperty("_Splat" + i)) continue;
                 TerrainLayer l = i < layers.Length ? layers[i] : null;
                 string n = i.ToString();
-                if (mat.HasProperty("_Splat" + n)) mat.SetTexture("_Splat" + n, l != null ? l.diffuseTexture : null);
+                mat.SetTexture("_Splat" + n, l != null ? l.diffuseTexture : null);
                 if (mat.HasProperty("_Normal" + n)) mat.SetTexture("_Normal" + n, l != null ? l.normalMapTexture : null);
                 if (l != null)
                 {
@@ -772,6 +824,12 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
             Vector3 tp = t != null ? t.transform.position : Vector3.zero;
             mat.SetTexture("_Control", data.controlTex);
+            for (int i = 1; i < 4; i++)
+            {
+                if (!mat.HasProperty("_Control" + i)) continue;
+                Texture2D c = data.extraControlTex != null && i - 1 < data.extraControlTex.Length ? data.extraControlTex[i - 1] : null;
+                mat.SetTexture("_Control" + i, c);
+            }
             mat.SetVector("_ControlST", data.controlST);
             mat.SetTexture("_HeightTex", data.heightTex);
             mat.SetVector("_HeightST", data.heightST);
@@ -801,23 +859,24 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             for (int i = zone.chunkRoot.childCount - 1; i >= 0; i--)
                 Undo.DestroyObjectImmediate(zone.chunkRoot.GetChild(i).gameObject);
 
-            // Reuse mesh sub-assets where possible so references elsewhere stay valid.
-            var oldMeshes = new List<Mesh>();
-            if (data.chunkMeshes != null) foreach (Mesh m in data.chunkMeshes) if (m != null) oldMeshes.Add(m);
-            var meshes = new Mesh[count];
-            for (int i = 0; i < count; i++)
-            {
-                if (i < oldMeshes.Count) { meshes[i] = oldMeshes[i]; continue; }
-                meshes[i] = new Mesh();
-                AssetDatabase.AddObjectToAsset(meshes[i], data);
-            }
-            for (int i = count; i < oldMeshes.Count; i++) UnityEngine.Object.DestroyImmediate(oldMeshes[i], true);
-            data.chunkMeshes = meshes;
+            // Reuse the mesh sub-assets so references elsewhere stay valid. Chunks without a surface get none.
+            var pool = new List<Mesh>();
+            string path = AssetDatabase.GetAssetPath(data);
+            if (!string.IsNullOrEmpty(path))
+                foreach (UnityEngine.Object o in AssetDatabase.LoadAllAssetRepresentationsAtPath(path))
+                    if (o is Mesh m) pool.Add(m);
+            data.chunkMeshes = new Mesh[count];
 
-            zone.chunkFilters = new MeshFilter[count];
-            zone.chunkRenderers = new MeshRenderer[count];
-            zone.chunkColliders = new MeshCollider[count];
+            // Runtime copies of the template are lit by light probes, so it is never lightmapped.
+            GameObject template = CreateChunkObject(zone, "Chunk Template", Vector3.zero, null, false);
+            Undo.RegisterCreatedObjectUndo(template, "Bake Dig Zone");
+            template.SetActive(false);
+            zone.chunkTemplate = template;
 
+            var ids = new List<int>();
+            var filters = new List<MeshFilter>();
+            var renderers = new List<MeshRenderer>();
+            var colliders = new List<MeshCollider>();
             var mesher = new ChunkMesher(data.chunkCells);
             float chunkSize = data.chunkCells * data.voxelSize;
 
@@ -826,49 +885,314 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             for (int cx = 0; cx < data.ChunksX; cx++)
             {
                 int ci = data.ChunkIndex(cx, cy, cz);
-                var go = new GameObject($"Chunk_{cx}_{cy}_{cz}") { layer = zone.chunkLayer };
-                Undo.RegisterCreatedObjectUndo(go, "Bake Dig Zone");
-                go.transform.SetParent(zone.chunkRoot, false);
-                go.transform.localPosition = new Vector3(cx, cy, cz) * chunkSize;
-
-                Mesh mesh = meshes[ci];
-                mesh.name = $"{data.name}_Chunk_{cx}_{cy}_{cz}";
-
-                var filter = go.AddComponent<MeshFilter>();
-                var rend = go.AddComponent<MeshRenderer>();
-                var col = go.AddComponent<MeshCollider>();
-                filter.sharedMesh = mesh;
-                rend.sharedMaterial = zone.material;
-                rend.shadowCastingMode = ShadowCastingMode.On;
-                rend.lightProbeUsage = LightProbeUsage.BlendProbes;
-                GameObjectUtility.SetStaticEditorFlags(go, 0); // meshes change at runtime
-
-                zone.chunkFilters[ci] = filter;
-                zone.chunkRenderers[ci] = rend;
-                zone.chunkColliders[ci] = col;
-
-                RebuildChunk(zone, data, mesher, cx, cy, cz);
-
-                if (ci % 16 == 0)
+                if (ci % 256 == 0)
                     EditorUtility.DisplayProgressBar("DigHoleIt", "Meshing chunks", 0.6f + 0.4f * ci / count);
+
+                mesher.Build(data, data.grid, data.HasPaintGrid ? data.paint : null, cx, cy, cz);
+                ClipToHole(zone, data, mesher, cx, cy, cz);
+                if (mesher.IndexCount == 0) continue;
+
+                Mesh mesh;
+                if (pool.Count > 0)
+                {
+                    mesh = pool[pool.Count - 1];
+                    pool.RemoveAt(pool.Count - 1);
+                }
+                else
+                {
+                    mesh = new Mesh();
+                    AssetDatabase.AddObjectToAsset(mesh, data);
+                }
+                mesh.name = $"{data.name}_Chunk_{cx}_{cy}_{cz}";
+                mesher.WriteTo(mesh);
+                mesh.RecalculateBounds();
+                if (zone.bakedLighting) GenerateLightmapUVs(mesh);
+                EditorUtility.SetDirty(mesh);
+                data.chunkMeshes[ci] = mesh;
+
+                GameObject go = CreateChunkObject(zone, $"Chunk_{cx}_{cy}_{cz}", new Vector3(cx, cy, cz) * chunkSize, mesh, zone.bakedLighting);
+                Undo.RegisterCreatedObjectUndo(go, "Bake Dig Zone");
+                ids.Add(ci);
+                filters.Add(go.GetComponent<MeshFilter>());
+                renderers.Add(go.GetComponent<MeshRenderer>());
+                colliders.Add(go.GetComponent<MeshCollider>());
             }
+            foreach (Mesh m in pool) UnityEngine.Object.DestroyImmediate(m, true);
+
+            zone.chunkIds = ids.ToArray();
+            zone.chunkFilters = filters.ToArray();
+            zone.chunkRenderers = renderers.ToArray();
+            zone.chunkColliders = colliders.ToArray();
+        }
+
+        /// <summary>
+        /// Cuts a chunk mesh to the terrain hole. Outside it the surface lies on the terrain: the shader hides it, but the
+        /// lightmapper would still see it shadow the terrain along the hole edge.
+        /// </summary>
+        private static void ClipToHole(DigZone zone, DigZoneData data, ChunkMesher mesher, int cx, int cy, int cz)
+        {
+            Vector4 h = data.holeRect;
+            if (h.z <= h.x || h.w <= h.y) return;
+            Vector3 o = zone.transform.position + new Vector3(cx, cy, cz) * (data.chunkCells * data.voxelSize);
+            mesher.ClipXZ(h.x - o.x, h.y - o.z, h.z - o.x, h.w - o.z);
+        }
+
+        private static GameObject CreateChunkObject(DigZone zone, string name, Vector3 localPosition, Mesh mesh, bool lightmapped)
+        {
+            var go = new GameObject(name) { layer = zone.chunkLayer };
+            go.transform.SetParent(zone.chunkRoot, false);
+            go.transform.localPosition = localPosition;
+            var filter = go.AddComponent<MeshFilter>();
+            var rend = go.AddComponent<MeshRenderer>();
+            var col = go.AddComponent<MeshCollider>();
+            filter.sharedMesh = mesh;
+            col.sharedMesh = mesh;
+            rend.sharedMaterial = zone.material;
+            rend.shadowCastingMode = ShadowCastingMode.On;
+            rend.lightProbeUsage = LightProbeUsage.BlendProbes;
+            SetChunkLighting(go, lightmapped, LightmapScale(zone));
+            return go;
+        }
+
+        // ---------------------------------------------------------------- Baked lighting
+
+        // Never Batching Static (the meshes change at runtime) or Occluder Static (digging opens views through the ground).
+        private const StaticEditorFlags LightmapFlags =
+            StaticEditorFlags.ContributeGI | StaticEditorFlags.ReflectionProbeStatic | StaticEditorFlags.OccludeeStatic;
+
+        // Chunk meshes remeshed by sculpting whose lightmap UVs are made when the stroke ends (see NotifyGridChanged).
+        private static readonly HashSet<Mesh> PendingLightmapUVs = new HashSet<Mesh>();
+
+        // Returns true if anything changed.
+        private static bool SetChunkLighting(GameObject go, bool lightmapped, float scale)
+        {
+            bool changed = false;
+            StaticEditorFlags flags = lightmapped ? LightmapFlags : 0;
+            if (GameObjectUtility.GetStaticEditorFlags(go) != flags)
+            {
+                GameObjectUtility.SetStaticEditorFlags(go, flags);
+                changed = true;
+            }
+            if (go.TryGetComponent(out MeshRenderer rend))
+            {
+                if (rend.receiveGI != ReceiveGI.Lightmaps) { rend.receiveGI = ReceiveGI.Lightmaps; changed = true; }
+                if (!Mathf.Approximately(rend.scaleInLightmap, scale)) { rend.scaleInLightmap = scale; changed = true; }
+            }
+            return changed;
+        }
+
+        // Every chunk is its own lightmap island, so a chunk only a few texels across shows its edges as a grid.
+        private const float MinChunkTexels = 16f;
+
+        /// <summary>
+        /// Scale In Lightmap of the zone's chunks, times the zone's Lightmap Scale: the terrain's, so the chunks get the
+        /// same texel size as the terrain around them, but at least <see cref="MinChunkTexels"/> texels across a chunk.
+        /// </summary>
+        public static float LightmapScale(DigZone zone)
+        {
+            float terrain = 1f;
+            if (zone.terrain != null)
+            {
+                SerializedProperty p = new SerializedObject(zone.terrain).FindProperty("m_ScaleInLightmap");
+                if (p != null && p.floatValue > 0f) terrain = p.floatValue;
+            }
+            float resolution = 40f; // Unity's default Lightmap Resolution
+            try
+            {
+                if (Lightmapping.lightingSettings != null) resolution = Lightmapping.lightingSettings.lightmapResolution;
+            }
+            catch (Exception)
+            {
+                // No Lighting Settings asset on the scene: Unity uses the defaults.
+            }
+            float chunkMetres = zone.chunkCells * zone.voxelSize;
+            float floor = MinChunkTexels / Mathf.Max(1e-3f, chunkMetres * resolution);
+            return Mathf.Max(terrain, floor) * Mathf.Max(0.01f, zone.lightmapScale);
+        }
+
+        /// <summary>Lightmap UVs (uv1) for a chunk mesh, so the lightmapper can bake it.</summary>
+        private static void GenerateLightmapUVs(Mesh mesh)
+        {
+            if (mesh == null || mesh.vertexCount == 0) return;
+            UnwrapParam.SetDefaults(out UnwrapParam unwrap);
+            Unwrapping.GenerateSecondaryUVSet(mesh, unwrap);
+            EditorUtility.SetDirty(mesh);
+        }
+
+        private static void FlushLightmapUVs()
+        {
+            if (PendingLightmapUVs.Count == 0) return;
+            foreach (Mesh m in PendingLightmapUVs) GenerateLightmapUVs(m);
+            PendingLightmapUVs.Clear();
+        }
+
+        /// <summary>
+        /// Applies the zone's Baked Lighting setting to its chunk objects: static flags for the lightmapper and lightmap
+        /// UVs on the chunk meshes. Bake does this too; call it after changing the setting.
+        /// </summary>
+        /// <returns>The number of chunk objects that were changed.</returns>
+        public static int ApplyLighting(DigZone zone)
+        {
+            if (zone.chunkFilters == null) return 0;
+            FlushLightmapUVs();
+            int changed = 0, uvs = 0;
+            float scale = LightmapScale(zone);
+            try
+            {
+                for (int k = 0; k < zone.chunkFilters.Length; k++)
+                {
+                    MeshFilter f = zone.chunkFilters[k];
+                    if (f == null) continue;
+                    bool c = SetChunkLighting(f.gameObject, zone.bakedLighting, scale);
+                    Mesh m = f.sharedMesh;
+                    if (zone.bakedLighting && m != null && m.vertexCount > 0 && !m.HasVertexAttribute(VertexAttribute.TexCoord1))
+                    {
+                        if (uvs++ % 16 == 0)
+                            EditorUtility.DisplayProgressBar("DigHoleIt", "Lightmap UVs", (float)k / zone.chunkFilters.Length);
+                        GenerateLightmapUVs(m);
+                        c = true;
+                    }
+                    if (c) changed++;
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+            if (zone.chunkTemplate != null) SetChunkLighting(zone.chunkTemplate, false, scale);
+            if (changed > 0) EditorSceneManager.MarkSceneDirty(zone.gameObject.scene);
+            return changed;
+        }
+
+        /// <summary>
+        /// Before a lighting bake, brings every zone's chunk objects in line with its Baked Lighting setting and the
+        /// terrain's Scale In Lightmap, so chunks whose flags were lost or whose meshes changed still get baked.
+        /// </summary>
+        [InitializeOnLoadMethod]
+        private static void HookLightingBake()
+        {
+            Lightmapping.bakeStarted -= SyncLightingBeforeBake;
+            Lightmapping.bakeStarted += SyncLightingBeforeBake;
+        }
+
+        private static void SyncLightingBeforeBake()
+        {
+            int changed = 0;
+            foreach (DigZone zone in UnityEngine.Object.FindObjectsByType<DigZone>(FindObjectsSortMode.None))
+                if (zone.data != null) changed += ApplyLighting(zone);
+            if (changed > 0)
+                Debug.Log($"[DigHoleIt] Updated the lighting settings of {changed} chunk objects before the lighting bake.");
+        }
+
+        /// <summary>
+        /// Adds (or refreshes) a Light Probe Group over the zone: two layers of probes, 0.5 m and 3 m above the terrain
+        /// surface. Chunks changed at runtime are lit by light probes. Probes stay above the ground, because probes
+        /// baked inside it would be black; the shader darkens dug areas with depth instead.
+        /// </summary>
+        public static LightProbeGroup AddLightProbes(DigZone zone)
+        {
+            Terrain t = zone.terrain;
+            if (t == null) return null;
+            LightProbeGroup group = zone.GetComponentInChildren<LightProbeGroup>(true);
+            if (group == null)
+            {
+                var go = new GameObject("Light Probes");
+                Undo.RegisterCreatedObjectUndo(go, "Add Light Probes");
+                go.transform.SetParent(zone.transform, false);
+                group = Undo.AddComponent<LightProbeGroup>(go);
+            }
+            else Undo.RecordObject(group, "Update Light Probes");
+
+            Bounds b = zone.WorldBounds;
+            // About 4 m apart, fewer on big zones (at most about 2000 probes).
+            float spacing = Mathf.Max(4f, Mathf.Sqrt(b.size.x * b.size.z / 1000f));
+            int nx = Mathf.Max(1, Mathf.CeilToInt(b.size.x / spacing));
+            int nz = Mathf.Max(1, Mathf.CeilToInt(b.size.z / spacing));
+            var points = new List<Vector3>();
+            for (int j = 0; j <= nz; j++)
+            for (int i = 0; i <= nx; i++)
+            {
+                var p = new Vector3(b.min.x + b.size.x * i / nx, 0f, b.min.z + b.size.z * j / nz);
+                p.y = t.SampleHeight(p) + t.transform.position.y;
+                points.Add(group.transform.InverseTransformPoint(p + Vector3.up * 0.5f));
+                points.Add(group.transform.InverseTransformPoint(p + Vector3.up * 3f));
+            }
+            group.probePositions = points.ToArray();
+            EditorUtility.SetDirty(group);
+            return group;
+        }
+
+        /// <summary>Gives chunk <paramref name="ci"/> a GameObject and mesh sub-asset when sculpting gives it a surface.</summary>
+        private static int AddChunkObject(DigZone zone, DigZoneData data, int ci, int cx, int cy, int cz)
+        {
+            // Zones baked by 0.4 have an object for every chunk; they only grow new ones after a re-bake.
+            if (zone.chunkRoot == null || zone.chunkIds == null || zone.chunkIds.Length == 0 && zone.chunkFilters != null && zone.chunkFilters.Length > 0)
+                return -1;
+
+            var mesh = new Mesh { name = $"{data.name}_Chunk_{cx}_{cy}_{cz}" };
+            AssetDatabase.AddObjectToAsset(mesh, data);
+            if (data.chunkMeshes != null && ci < data.chunkMeshes.Length) data.chunkMeshes[ci] = mesh;
+
+            float chunkSize = data.chunkCells * data.voxelSize;
+            GameObject go = CreateChunkObject(zone, $"Chunk_{cx}_{cy}_{cz}", new Vector3(cx, cy, cz) * chunkSize, mesh, zone.bakedLighting);
+            int slot = zone.chunkIds.Length;
+            zone.chunkIds = Append(zone.chunkIds, ci);
+            zone.chunkFilters = Append(zone.chunkFilters, go.GetComponent<MeshFilter>());
+            zone.chunkRenderers = Append(zone.chunkRenderers, go.GetComponent<MeshRenderer>());
+            zone.chunkColliders = Append(zone.chunkColliders, go.GetComponent<MeshCollider>());
+            EditorUtility.SetDirty(zone);
+            EditorUtility.SetDirty(data);
+            EditorSceneManager.MarkSceneDirty(zone.gameObject.scene);
+            return slot;
+        }
+
+        private static T[] Append<T>(T[] array, T item)
+        {
+            int n = array?.Length ?? 0;
+            var a = new T[n + 1];
+            if (n > 0) Array.Copy(array, a, n);
+            a[n] = item;
+            return a;
         }
 
         private static void RebuildChunk(DigZone zone, DigZoneData data, ChunkMesher mesher, int cx, int cy, int cz)
         {
             int ci = data.ChunkIndex(cx, cy, cz);
-            Mesh mesh = data.chunkMeshes[ci];
             mesher.Build(data, data.grid, data.HasPaintGrid ? data.paint : null, cx, cy, cz);
-            bool has = mesher.WriteTo(mesh);
+            ClipToHole(zone, data, mesher, cx, cy, cz);
+            bool has = mesher.IndexCount > 0;
+
+            int slot = zone.ChunkSlot(ci);
+            if (slot < 0)
+            {
+                if (!has) return;
+                slot = AddChunkObject(zone, data, ci, cx, cy, cz);
+                if (slot < 0) return;
+            }
+
+            MeshFilter filter = zone.chunkFilters[slot];
+            if (filter == null) return;
+            Mesh mesh = filter.sharedMesh;
+            if (mesh == null && data.chunkMeshes != null && ci < data.chunkMeshes.Length) mesh = data.chunkMeshes[ci];
+            if (mesh == null)
+            {
+                mesh = new Mesh { name = $"{data.name}_Chunk_{cx}_{cy}_{cz}" };
+                AssetDatabase.AddObjectToAsset(mesh, data);
+                if (data.chunkMeshes != null && ci < data.chunkMeshes.Length) data.chunkMeshes[ci] = mesh;
+                filter.sharedMesh = mesh;
+            }
+            mesher.WriteTo(mesh);
             if (has) mesh.RecalculateBounds();
+            if (has && zone.bakedLighting) PendingLightmapUVs.Add(mesh);
             EditorUtility.SetDirty(mesh);
 
-            if (zone.chunkRenderers != null && ci < zone.chunkRenderers.Length && zone.chunkRenderers[ci] != null)
-                zone.chunkRenderers[ci].enabled = has;
-            if (zone.chunkColliders != null && ci < zone.chunkColliders.Length && zone.chunkColliders[ci] != null)
+            MeshRenderer rend = slot < zone.chunkRenderers?.Length ? zone.chunkRenderers[slot] : null;
+            if (rend != null) rend.enabled = has;
+            MeshCollider col = slot < zone.chunkColliders?.Length ? zone.chunkColliders[slot] : null;
+            if (col != null)
             {
-                zone.chunkColliders[ci].sharedMesh = null;
-                if (has) zone.chunkColliders[ci].sharedMesh = mesh;
+                col.sharedMesh = null;
+                if (has) col.sharedMesh = mesh;
             }
         }
 
@@ -903,6 +1227,8 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             if (zone.chunkRoot != null) Undo.DestroyObjectImmediate(zone.chunkRoot.gameObject);
             Undo.RecordObject(zone, "Clear Dig Zone");
             zone.chunkRoot = null;
+            zone.chunkTemplate = null;
+            zone.chunkIds = null;
             zone.chunkFilters = null;
             zone.chunkRenderers = null;
             zone.chunkColliders = null;

@@ -37,7 +37,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             set => EditorPrefs.SetFloat(Prefix + "Strength", Mathf.Clamp(value, 0.01f, 1f));
         }
 
-        /// <summary>Layer painted by the Paint mode (DigFormat: 0 auto, 1-4 terrain layers, 5 dug soil).</summary>
+        /// <summary>Layer painted by the Paint mode (DigFormat: 0 auto, 1-4 terrain layers 0-3, 5 dug soil, 6-17 terrain layers 4-15).</summary>
         public static int PaintLayer
         {
             get => EditorPrefs.GetInt(Prefix + "PaintLayer", 1);

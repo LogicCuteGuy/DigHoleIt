@@ -5,11 +5,11 @@ DigHoleIt turns part of a Unity Terrain into diggable voxel terrain. You place a
 | Page | What it covers |
 |---|---|
 | [Getting started](getting-started.md) | Installing the package, the demo scenes, and setting up a zone on your own terrain |
-| [Dig Zones](dig-zones.md) | Zone settings, baking, moving and resizing, terrain holes, and following terrain edits |
+| [Dig Zones](dig-zones.md) | Zone settings, baking, moving and resizing, terrain holes, following terrain edits, terrain layers and baked lighting |
 | [Editor brushes](editor-brushes.md) | Sculpting and painting zones in the editor |
 | [VRChat runtime](vrchat-runtime.md) | `DigZoneRuntime`, `DigTool` and `DigSync` (UdonSharp) |
 | [Standalone runtime](standalone-runtime.md) | `DigZoneRuntimeStandalone` and `DigToolStandalone` (plain C#), with saves and multiplayer |
-| [How it works](how-it-works.md) | Grid format, edit packing, meshing, shading and networking |
+| [How it works](how-it-works.md) | Grid format and compression, edit packing, meshing, shading, lighting and networking |
 | [Performance and limits](performance.md) | Recommended settings for PC and Quest, memory use, and known limits |
 | [Troubleshooting](troubleshooting.md) | Common problems and how to fix them |
 
@@ -26,12 +26,16 @@ The authoring side (`DigZone`, the baker, the brushes) and the shared mesher and
 ## Package layout
 
 ```
-Runtime/Core        DigZone (authoring, editor only in builds), DigZoneData, ChunkMesher
-Runtime/Shared      DigBrush, DigFormat, SurfaceNets: compiled into both Udon and C#
+Runtime/Core        DigZone (authoring, editor only in builds), DigZoneData, ChunkMesher, DigChunkPacker, DigRleEncoder
+Runtime/Shared      DigBrush, DigFormat, DigRle, SurfaceNets: compiled into both Udon and C#
 Runtime/Udon        DigZoneRuntime, DigTool, DigSync (VRChat only)
 Runtime/Standalone  DigZoneRuntimeStandalone, DigToolStandalone (non-VRChat only)
-Editor              Baker, inspector, handles, brushes, terrain tools, terrain sync
-Editor/Udon         Bridge that copies baked data into the Udon runtime, VRChat demo builder
+Editor              Baker, inspectors, handles, brushes, terrain tools, terrain sync
+Editor/Udon         Bridge that copies baked data into the Udon runtime, Udon inspectors, VRChat demo builder
 Shaders             DigHoleIt/DigTerrain (Standard) and DigHoleIt/DigTerrain Lite (Quest)
 Tests/Editor        EditMode tests
 ```
+
+## Source and support
+
+DigHoleIt is made by [LogicCuteGuy](https://github.com/LogicCuteGuy). Source, releases and issues: [github.com/LogicCuteGuy/DigHoleIt](https://github.com/LogicCuteGuy/DigHoleIt).

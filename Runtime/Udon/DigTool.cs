@@ -24,9 +24,9 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         public float radius = 0.75f;
         [Tooltip("0 = dig, 1 = add soil, 2 = paint")]
         public int mode = ModeDig;
-        [Tooltip("Layer painted in paint mode: 0 = auto (erase paint), 1-4 = terrain layers 0-3, 5 = dug soil.")]
+        [Tooltip("Layer painted in paint mode: 0 = auto (erase paint), 1-4 = terrain layers 0-3, 5 = dug soil, 6-17 = terrain layers 4-15.")]
         public int paintLayer = 1;
-        [Tooltip("Layer given to added soil: 0 = auto, 1-4 = terrain layers 0-3, 5 = dug soil.")]
+        [Tooltip("Layer given to added soil: 0 = auto, 1-4 = terrain layers 0-3, 5 = dug soil, 6-17 = terrain layers 4-15.")]
         public int addLayer;
         [Tooltip("Seconds between edits while Use is held.")]
         public float interval = 0.25f;

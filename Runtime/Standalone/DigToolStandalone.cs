@@ -16,9 +16,9 @@ namespace LogicCuteGuy.DigHoleIt
         public float radius = 1f;
         [Tooltip("Seconds between edits while a button is held.")]
         public float interval = 0.1f;
-        [Tooltip("Layer given to added soil: 0 = auto, 1-4 = terrain layers 0-3, 5 = dug soil.")]
+        [Tooltip("Layer given to added soil: 0 = auto, 1-4 = terrain layers 0-3, 5 = dug soil, 6-17 = terrain layers 4-15.")]
         [Range(0, DigFormat.LayerMax)] public int addLayer;
-        [Tooltip("Layer painted with the middle button: 0 = auto (erase paint), 1-4 = terrain layers 0-3, 5 = dug soil.")]
+        [Tooltip("Layer painted with the middle button: 0 = auto (erase paint), 1-4 = terrain layers 0-3, 5 = dug soil, 6-17 = terrain layers 4-15.")]
         [Range(0, DigFormat.LayerMax)] public int paintLayer = 1;
 
         private float _next;

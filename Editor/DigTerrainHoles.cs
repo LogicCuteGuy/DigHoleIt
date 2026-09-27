@@ -59,15 +59,18 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             if (deleted.Count > 0) DigTerrainZones.Invalidate();
         }
 
-        /// <summary>Live zones (loaded scenes) other than <paramref name="data"/>'s that cut the same terrain.</summary>
-        private static List<DigZoneData> OtherCuts(DigZoneData data, TerrainData td)
+        /// <summary>
+        /// Live zones (loaded scenes) other than <paramref name="data"/>'s whose hole in the same terrain overlaps
+        /// <paramref name="rect"/>. Only those are recorded for undo: a big zone's data is slow to record.
+        /// </summary>
+        private static List<DigZoneData> OtherCuts(DigZoneData data, TerrainData td, RectInt rect)
         {
             var list = new List<DigZoneData>();
             foreach (DigZone z in Object.FindObjectsByType<DigZone>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
                 DigZoneData d = z.data;
                 if (d == null || d == data || d.cutTerrain != td || d.cutPrevious == null || list.Contains(d)) continue;
-                if (d.cutPrevious.Length != d.cutRect.width * d.cutRect.height) continue;
+                if (d.cutPrevious.Length != d.cutRect.width * d.cutRect.height || !d.cutRect.Overlaps(rect)) continue;
                 list.Add(d);
             }
             return list;
@@ -91,7 +94,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             RectInt r = data.cutRect;
             if (r.width <= 0 || r.height <= 0 || data.cutPrevious.Length != r.width * r.height) return;
 
-            List<DigZoneData> others = OtherCuts(data, td);
+            List<DigZoneData> others = OtherCuts(data, td, r);
             Undo.RegisterCompleteObjectUndo(td, "Fill Terrain Hole");
             Undo.RegisterCompleteObjectUndo(data, "Fill Terrain Hole");
             foreach (DigZoneData o in others) Undo.RegisterCompleteObjectUndo(o, "Fill Terrain Hole");

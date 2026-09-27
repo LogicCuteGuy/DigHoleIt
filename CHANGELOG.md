@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.0] - 2026-09-28
+
+### Added
+- Grid compression: `DigZoneData` and `DigZoneRuntime` store the grids run-length encoded (`DigRle` decoder in Runtime/Shared, also compiled into Udon; `DigRleEncoder` in Runtime/Core). A terrain grid shrinks to about 2–5 %. The zone inspector shows memory and stored sizes.
+- Per-chunk grids in the VRChat runtime (`DigChunkPacker`, `DigRle.DecodeChunk`, `DigFormat.ChunkSamples`): nothing is decoded at load, a chunk is decoded the first time an edit reaches it, and `_ResetToOriginal` just drops the decoded chunks and restores the baked meshes. A player's memory grows with the area that gets dug, not with the zone size. `_DecodedChunkCount()`.
+- Only chunks with a surface get a GameObject, mesh sub-asset and collider (`DigZone.chunkIds`); runtimes and editor sculpting copy the inactive Chunk Template when a chunk gains a surface.
+- `DigZoneData.MarkChanged(box)`: sculpt strokes re-encode only the chunks they touched when the VRChat runtime is updated.
+- Terrain layers follow the terrain: up to 16 (was 4), with one splat texture per four layers and shader variants for 4, 8, 12 or 16 layers (`_DIGLAYERS_*`). DigTerrain Lite shades up to 8. Paint values 6–17 are terrain layers 4–15 (`DigFormat.PaintValue`, `DigFormat.TerrainLayerOf`, `DigFormat.MaxTerrainLayers`); the layer picker lists every terrain layer.
+- Paint slots: each chunk mesh holds up to 4 painted terrain layers plus dug soil (`SurfaceNets.SlotCount`, `ResetSlots`, `FinishPaint`); uv0.y carries the slots' layers.
+- Baked lighting: **Baked Lighting** on the zone (on by default) gives chunk meshes lightmap UVs and marks them Contribute GI. Runtimes switch a chunk they remesh to light probes and restore its lightmap on reset. **Add Light Probes** places a Light Probe Group above the terrain over the zone. The shaders darken dug areas with depth (**Darkening Below Surface**, **Darkening Depth**). Chunks take the terrain's Scale In Lightmap (at least 16 texels across a chunk) times the zone's **Lightmap Scale**, and bake re-applies the lighting settings of every zone when a lighting bake starts.
+- Baked chunk meshes are cut to the terrain hole (`ChunkMesher.ClipXZ`). The part outside was hidden by the shader but still shadowed the terrain in the lightmapper (dark lines along the hole edge) and took lightmap space.
+- Holding `[` or `]` keeps shrinking or growing the brush; a tap still changes it by 10%.
+- A "DigHoleIt · by LogicCuteGuy" credit line (with the package version, linking to the project page) at the bottom of every DigHoleIt inspector, the Terrain tool panels and the brush overlay (`DigCredit`).
+- **Add VRChat Runtime** / **Add Standalone Runtime** buttons (with **Remove**) in the zone inspector, and `DigZoneEditor.RuntimeGUI` for runtime backends. `DigUdonBridge.AddRuntime` / `RemoveRuntime`.
+
+### Changed
+- Creating or baking a zone no longer adds `DigZoneRuntime` and `DigSync`. Add them with the button; after that, bakes and sculpting keep them up to date. The VRChat demo scene still adds them.
+- An edit's layer field is 5 bits (bits 59-63), so the largest paint values set the sign bit. Layer values 0-5 keep their meaning.
+- `SurfaceNets.BuildPaint` takes a paint slot array. `DigZoneData.extraControlTex` and `layerCount`.
+- DigTerrain Lite targets shader model 3.5 (GLES3 / Vulkan), for the paint slot interpolator.
+- `DigZoneRuntimeStandalone.ResetToBaked` puts the baked meshes back instead of remeshing every chunk.
+- The grid limit is now 128 Mi samples (`DigZone.MaxSamples`, was 16 million), and the error says how to fix it. The inspector warns above 16 million.
+- `DigZoneRuntime.grid` / `paint` are replaced by `chunkRle` / `chunkOffsets` / `paintRle` / `paintOffsets`, plus `chunkIds` and `chunkTemplate`; the chunk arrays list only chunks with an object. `DigZoneData.grid`, `paint` and `baseGrid` are no longer serialized directly. Code that changes a grid in place must call `MarkChanged` or bump `gridVersion`.
+- `DigZone.chunkFilters` / `chunkRenderers` / `chunkColliders` are indexed through `DigZone.ChunkSlot(ci)`, and `DigZoneData.chunkMeshes` has null entries for chunks without a surface.
+- The repository moved to https://github.com/LogicCuteGuy/DigHoleIt (the package name stays `com.logiccuteguy.digholeit`). Git URLs with the old name still redirect.
+- A bake records only the zones whose terrain holes overlap its own for undo. It used to record every zone on the terrain, which took minutes when one of them was large.
+
+### Upgrading from 0.3
+- Data assets are read in the old format and saved compressed the next time they change, and `DigZoneRuntime`s are converted when their scene opens (save the scene to keep it).
+- Bake each zone once to drop the objects and meshes of empty chunks, pick up terrain layers beyond 4 and get lightmap UVs (sculpting and paint are kept). Until then everything still works. Then bake the scene's lighting if it uses baked lights.
+
 ## [0.3.0] - 2026-09-27
 
 ### Added

@@ -455,7 +455,7 @@ MonoBehaviour:
     - Name: tooltip
       Entry: 1
       Data: 'Layer painted in paint mode: 0 = auto (erase paint), 1-4 = terrain layers
-        0-3, 5 = dug soil.'
+        0-3, 5 = dug soil, 6-17 = terrain layers 4-15.'
     - Name: 
       Entry: 8
       Data: 
@@ -513,7 +513,7 @@ MonoBehaviour:
     - Name: tooltip
       Entry: 1
       Data: 'Layer given to added soil: 0 = auto, 1-4 = terrain layers 0-3, 5 = dug
-        soil.'
+        soil, 6-17 = terrain layers 4-15.'
     - Name: 
       Entry: 8
       Data: 

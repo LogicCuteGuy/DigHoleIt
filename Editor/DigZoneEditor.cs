@@ -1,3 +1,4 @@
+using System;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEngine;
@@ -10,10 +11,20 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         /// <summary>Set while the Terrain tools draw this inspector inside the Terrain inspector.</summary>
         internal static bool Embedded;
 
+        /// <summary>
+        /// Runtime backends (the VRChat bridge, the standalone runtime) draw their Add/Remove buttons here. Creating
+        /// or baking a zone adds no runtime by itself.
+        /// </summary>
+        public static event Action<DigZone> RuntimeGUI;
+
         public override void OnInspectorGUI()
         {
             var zone = (DigZone)target;
+            bool bakedLighting = zone.bakedLighting;
+            float lightmapScale = zone.lightmapScale;
             DrawDefaultInspector();
+            if (zone.bakedLighting != bakedLighting || !Mathf.Approximately(zone.lightmapScale, lightmapScale))
+                DigZoneBaker.ApplyLighting(zone);
 
             EditorGUILayout.Space();
             DrawInfo(zone);
@@ -32,6 +43,14 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 if (GUILayout.Button(new GUIContent("Bake", "Bake from the terrain, keeping sculpting and paint."), GUILayout.Height(24)))
                     DigZoneBaker.Bake(zone);
             }
+
+            RuntimeGUI?.Invoke(zone);
+
+            bool hasProbes = zone.GetComponentInChildren<LightProbeGroup>(true) != null;
+            if (GUILayout.Button(new GUIContent(hasProbes ? "Update Light Probes" : "Add Light Probes",
+                    "Light probes above the terrain over the zone. Chunks changed at runtime lose their lightmap and are lit by " +
+                    "light probes, so bake lighting with probes in place.")))
+                DigZoneBaker.AddLightProbes(zone);
 
             using (new EditorGUI.DisabledScope(zone.data == null || !zone.data.HasGrid))
             using (new EditorGUILayout.HorizontalScope())
@@ -72,6 +91,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                     GUIUtility.ExitGUI();
                 }
             }
+
+            // Inside the Terrain inspector the tool draws the credit once, under all its zones.
+            if (!Embedded) DigCredit.Draw();
         }
 
         private static void DrawInfo(DigZone zone)
@@ -81,11 +103,17 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             int chunks = Mathf.CeilToInt(c.x / (float)zone.chunkCells) * Mathf.CeilToInt(c.y / (float)zone.chunkCells) * Mathf.CeilToInt(c.z / (float)zone.chunkCells);
             Vector3 size = (Vector3)c * zone.voxelSize;
 
-            string msg = $"Size {size.x:0.#} x {size.y:0.#} x {size.z:0.#} m   Grid {samples / 1024} KB   Chunks {chunks}";
+            string msg = $"Size {size.x:0.#} x {size.y:0.#} x {size.z:0.#} m   Grid {Megabytes(samples)}   Chunks {chunks}";
             DigZoneData d = zone.data;
             if (d == null || !d.HasGrid) msg += "\nNot baked yet.";
             else
             {
+                msg += $"\nStored compressed: {Megabytes(d.StoredBytes)}";
+                bool everyChunk = (zone.chunkIds == null || zone.chunkIds.Length == 0) && zone.chunkFilters != null && zone.chunkFilters.Length > 0;
+                if (everyChunk)
+                    msg += $"\nEvery chunk has an object ({zone.chunkFilters.Length}), as older versions baked it. Bake again to keep only chunks with a surface.";
+                else if (zone.chunkFilters != null)
+                    msg += $"\nChunk objects: {zone.chunkFilters.Length} (only chunks with a surface; digging adds more as needed)";
                 if (!DigZoneBaker.IsUpToDate(zone))
                 {
                     msg += DigZoneBaker.CanKeepSculpt(zone, out string reason)
@@ -104,11 +132,18 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 EditorGUILayout.HelpBox($"Border Voxels ({zone.borderVoxels}) leaves only {Mathf.Max(0, c.y - 1 - border)} voxels of diggable depth out of {c.y}. " +
                     "Border Voxels is the untouched margin at the hole edge and above the floor; 2-3 is typical.", MessageType.Warning);
 
-            if (samples > 2_000_000)
-                EditorGUILayout.HelpBox("Large grid: Udon keeps it in memory and scene files grow. Prefer several smaller zones for Quest.", MessageType.Warning);
+            if (samples > DigZone.MaxSamples)
+                EditorGUILayout.HelpBox($"Too large to bake: {samples / 1_000_000} million samples, the limit is {DigZone.MaxSamples / 1_000_000} million. " +
+                    "Make the zone smaller, split it into several zones, or use bigger voxels.", MessageType.Error);
+            else if (samples > 16_000_000)
+                EditorGUILayout.HelpBox("Large grid: baking and sculpting it in the editor take a while. Players decode only the chunks they dig, " +
+                    "but every chunk with a surface is a draw call and a collider. Put zones only where players dig, especially for Quest.", MessageType.Warning);
             if (zone.transform.rotation != Quaternion.identity || zone.transform.lossyScale != Vector3.one)
                 EditorGUILayout.HelpBox("Rotation and scale are ignored; Bake resets them.", MessageType.Warning);
         }
+
+        private static string Megabytes(long bytes) =>
+            bytes >= 1024 * 1024 ? $"{bytes / (1024f * 1024f):0.#} MB" : $"{Math.Max(1, bytes / 1024)} KB";
 
         private void OnSceneGUI()
         {

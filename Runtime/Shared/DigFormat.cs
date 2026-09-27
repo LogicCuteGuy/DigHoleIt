@@ -10,13 +10,14 @@ namespace LogicCuteGuy.DigHoleIt
     /// s &lt; 0 is solid, s &gt;= 0 is air.
     ///
     /// Paint grid: same layout, one layer per sample: 0 auto (terrain splat above the original surface, dug soil
-    /// below), 1-4 terrain layers 0-3, 5 dug soil.
+    /// below), 1-4 terrain layers 0-3, 5 dug soil, 6-17 terrain layers 4-15. Use <see cref="PaintValue"/> and
+    /// <see cref="TerrainLayerOf"/> to convert.
     ///
-    /// Edit (long, 62 bits used):
+    /// Edit (long, all 64 bits used):
     ///   bits  0-15 x, 16-31 y, 32-47 z : zone grid position in 1/16 voxel
     ///   bits 48-55 radius              : 1/8 voxel
     ///   bits 56-58 op                  : 0 dig, 1 add, 3 paint
-    ///   bits 59-61 layer               : paint layer (paint), layer given to the added soil (add, 0 = leave as is)
+    ///   bits 59-63 layer               : paint value (paint), value given to the added soil (add, 0 = leave as is)
     /// </summary>
     public static class DigFormat
     {
@@ -32,7 +33,10 @@ namespace LogicCuteGuy.DigHoleIt
 
         public const int LayerAuto = 0;
         public const int LayerDugSoil = 5;
-        public const int LayerMax = 5;
+        /// <summary>Terrain layers a zone can shade and paint.</summary>
+        public const int MaxTerrainLayers = 16;
+        /// <summary>Largest paint value: terrain layer 15.</summary>
+        public const int LayerMax = 17;
 
         public const float PosScale = 16f;
         public const float RadiusScale = 8f;
@@ -58,12 +62,27 @@ namespace LogicCuteGuy.DigHoleIt
         /// <summary><see cref="Pack"/> plus a paint layer (see the format above).</summary>
         public static long PackLayer(Vector3 gridPos, float radiusVoxels, int op, int layer)
         {
-            return Pack(gridPos, radiusVoxels, op) | ((long)(layer & 7) << 59);
+            return Pack(gridPos, radiusVoxels, op) | ((long)(layer & 31) << 59);
         }
 
         public static int UnpackLayer(long e)
         {
-            return (int)((e >> 59) & 7);
+            return (int)((e >> 59) & 31);
+        }
+
+        /// <summary>Paint value of terrain layer <paramref name="terrainLayer"/> (0-15), or 0 (auto) if out of range.</summary>
+        public static int PaintValue(int terrainLayer)
+        {
+            if (terrainLayer < 0 || terrainLayer >= MaxTerrainLayers) return LayerAuto;
+            return terrainLayer < 4 ? terrainLayer + 1 : terrainLayer + 2;
+        }
+
+        /// <summary>Terrain layer a paint value stands for, or -1 for auto, dug soil and invalid values.</summary>
+        public static int TerrainLayerOf(int paintValue)
+        {
+            if (paintValue >= 1 && paintValue <= 4) return paintValue - 1;
+            if (paintValue >= 6 && paintValue <= LayerMax) return paintValue - 2;
+            return -1;
         }
 
         public static void Unpack(long e, out Vector3 gridPos, out float radiusVoxels, out int op)
@@ -82,6 +101,19 @@ namespace LogicCuteGuy.DigHoleIt
             cMin = min - 1 < 0 ? 0 : (min - 1) / chunkCells;
             cMax = (max + 1) / chunkCells;
             if (cMax > chunkCount - 1) cMax = chunkCount - 1;
+        }
+
+        /// <summary>
+        /// Samples chunk <paramref name="c"/> reads along one axis, inclusive: its own cells plus one sample on each side,
+        /// clamped to the grid (<paramref name="cells"/> cells, so samples 0..cells). A chunk meshed from just these
+        /// samples matches the chunk meshed from the whole grid.
+        /// </summary>
+        public static void ChunkSamples(int c, int chunkCells, int cells, out int s0, out int s1)
+        {
+            s0 = c * chunkCells - 1;
+            if (s0 < 0) s0 = 0;
+            s1 = c * chunkCells + chunkCells;
+            if (s1 > cells) s1 = cells;
         }
     }
 }

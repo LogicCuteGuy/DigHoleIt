@@ -66,6 +66,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
                 DigBrushGUI.BrushFields(true);
                 GUILayout.Label(DigBrushGUI.Hints + "\nShift: add   Ctrl: smooth", EditorStyles.miniLabel);
+                DigCredit.Draw();
             }
         }
     }

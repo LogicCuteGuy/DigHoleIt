@@ -177,7 +177,32 @@ namespace LogicCuteGuy.DigHoleIt.Tests
             Assert.AreEqual(new Vector3(3f, 4f, 5f), p);
             Assert.AreEqual(1.5f, r, 1e-4f);
             Assert.AreEqual(DigFormat.OpPaint, op);
-            Assert.GreaterOrEqual(e, 0L, "sign bit must stay clear");
+
+            // The largest paint value uses the top bit; everything else must survive it.
+            long top = DigFormat.PackLayer(new Vector3(3f, 4f, 5f), 1.5f, DigFormat.OpAdd, DigFormat.LayerMax);
+            Assert.AreEqual(DigFormat.LayerMax, DigFormat.UnpackLayer(top));
+            DigFormat.Unpack(top, out p, out r, out op);
+            Assert.AreEqual(new Vector3(3f, 4f, 5f), p);
+            Assert.AreEqual(1.5f, r, 1e-4f);
+            Assert.AreEqual(DigFormat.OpAdd, op);
+        }
+
+        [Test]
+        public void PaintValues_MapToTerrainLayers()
+        {
+            for (int l = 0; l < DigFormat.MaxTerrainLayers; l++)
+            {
+                int v = DigFormat.PaintValue(l);
+                Assert.AreNotEqual(DigFormat.LayerAuto, v);
+                Assert.AreNotEqual(DigFormat.LayerDugSoil, v);
+                Assert.LessOrEqual(v, DigFormat.LayerMax);
+                Assert.AreEqual(l, DigFormat.TerrainLayerOf(v));
+            }
+            Assert.AreEqual(1, DigFormat.PaintValue(0), "layers 0-3 keep the values of earlier versions");
+            Assert.AreEqual(4, DigFormat.PaintValue(3));
+            Assert.AreEqual(-1, DigFormat.TerrainLayerOf(DigFormat.LayerAuto));
+            Assert.AreEqual(-1, DigFormat.TerrainLayerOf(DigFormat.LayerDugSoil));
+            Assert.AreEqual(-1, DigFormat.TerrainLayerOf(DigFormat.LayerMax + 1));
         }
 
         [Test]
@@ -218,6 +243,47 @@ namespace LogicCuteGuy.DigHoleIt.Tests
         }
 
         [Test]
+        public void BuildPaint_GivesAChunkUpToFourLayerSlots()
+        {
+            byte[] grid = MakeGrid(N, (x, y, z) => y - 8.4f);
+            var paint = new byte[grid.Length];
+            int s = N + 1;
+            // Stripes along x: terrain layers 9, 2, 12, 5 and 7; the fifth has no slot left.
+            int[] stripes = { 9, 2, 12, 5, 7 };
+            for (int z = 0; z <= N; z++)
+            for (int y = 0; y <= N; y++)
+            for (int x = 0; x <= N; x++)
+                paint[x + s * (y + s * z)] = (byte)DigFormat.PaintValue(stripes[Mathf.Min(x / 3, 4)]);
+
+            int cells = SurfaceNets.CellBufferSize(N);
+            var cellVert = new int[cells];
+            var vMask = new int[cells];
+            var vCell = new int[cells];
+            var vPos = new Vector3[cells];
+            var vNrm = new Vector3[cells];
+            var vCol = new Color[cells];
+            var vUv = new Vector2[cells];
+            var slots = new int[SurfaceNets.SlotCount];
+            int vc = SurfaceNets.BuildRows(grid, N, N, N, 0, 0, 0, N, 0.5f, 0, SurfaceNets.RowCount(N), cellVert, vPos, vNrm, vMask, vCell, 0);
+            SurfaceNets.ResetSlots(slots);
+            SurfaceNets.BuildPaint(paint, N, N, 0, 0, 0, N, 0.5f, vCell, vPos, 0, vc, vCol, vUv, slots);
+            SurfaceNets.FinishPaint(slots, vUv, 0, vc);
+
+            CollectionAssert.AreEquivalent(new[] { 9, 2, 12, 5 }, slots);
+            float packed = vUv[0].y;
+            int p = Mathf.RoundToInt(packed) - 1;
+            for (int k = 0; k < SurfaceNets.SlotCount; k++, p /= 16) Assert.AreEqual(slots[k], p % 16, $"slot {k} layer in uv0.y");
+            for (int v = 0; v < vc; v++)
+            {
+                Assert.AreEqual(packed, vUv[v].y, "every vertex carries the same slot layers");
+                float gx = vPos[v].x / 0.5f;
+                float sum = vCol[v].r + vCol[v].g + vCol[v].b + vCol[v].a;
+                if (gx < 11f) Assert.AreEqual(1f, sum, 1e-4f, "painted with slotted layers");
+                if (gx > 13f) Assert.AreEqual(0f, sum, 1e-4f, "the fifth layer falls back to auto");
+            }
+        }
+
+        [Test]
         public void BuildPaint_WeightsBlendAndSumToOne()
         {
             byte[] grid = MakeGrid(N, (x, y, z) => y - 8.4f);
@@ -237,8 +303,11 @@ namespace LogicCuteGuy.DigHoleIt.Tests
             var vNrm = new Vector3[cells];
             var vCol = new Color[cells];
             var vUv = new Vector2[cells];
+            var slots = new int[SurfaceNets.SlotCount];
             int vc = SurfaceNets.BuildRows(grid, N, N, N, 0, 0, 0, N, 0.5f, 0, SurfaceNets.RowCount(N), cellVert, vPos, vNrm, vMask, vCell, 0);
-            SurfaceNets.BuildPaint(paint, N, N, 0, 0, 0, N, 0.5f, vCell, vPos, 0, vc, vCol, vUv);
+            SurfaceNets.ResetSlots(slots);
+            SurfaceNets.BuildPaint(paint, N, N, 0, 0, 0, N, 0.5f, vCell, vPos, 0, vc, vCol, vUv, slots);
+            Assert.AreEqual(0, slots[0], "terrain layer 0 takes the first slot");
 
             Assert.Greater(vc, 0);
             bool sawBlend = false;
@@ -254,7 +323,8 @@ namespace LogicCuteGuy.DigHoleIt.Tests
             Assert.IsTrue(sawBlend, "the boundary between layers should blend");
 
             System.Array.Clear(paint, 0, paint.Length);
-            SurfaceNets.BuildPaint(paint, N, N, 0, 0, 0, N, 0.5f, vCell, vPos, 0, vc, vCol, vUv);
+            SurfaceNets.ResetSlots(slots);
+            SurfaceNets.BuildPaint(paint, N, N, 0, 0, 0, N, 0.5f, vCell, vPos, 0, vc, vCol, vUv, slots);
             for (int v = 0; v < vc; v++) Assert.AreEqual(new Color(0, 0, 0, 0), vCol[v]);
         }
 
