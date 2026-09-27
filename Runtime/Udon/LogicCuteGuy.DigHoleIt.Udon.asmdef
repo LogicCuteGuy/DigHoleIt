@@ -1,0 +1,22 @@
+{
+    "name": "LogicCuteGuy.DigHoleIt.Udon",
+    "rootNamespace": "LogicCuteGuy.DigHoleIt.Udon",
+    "references": [
+        "LogicCuteGuy.DigHoleIt.Shared",
+        "UdonSharp.Runtime",
+        "VRC.Udon",
+        "VRC.SDKBase",
+        "VRC.SDK3"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "VRC_SDK_VRCSDK3"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

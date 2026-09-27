@@ -1,0 +1,19 @@
+{
+    "name": "LogicCuteGuy.DigHoleIt.Standalone",
+    "rootNamespace": "LogicCuteGuy.DigHoleIt",
+    "references": [
+        "LogicCuteGuy.DigHoleIt.Shared",
+        "LogicCuteGuy.DigHoleIt.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "!VRC_SDK_VRCSDK3 || DIGHOLEIT_STANDALONE"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

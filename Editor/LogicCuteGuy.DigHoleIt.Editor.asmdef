@@ -1,0 +1,20 @@
+{
+    "name": "LogicCuteGuy.DigHoleIt.Editor",
+    "rootNamespace": "LogicCuteGuy.DigHoleIt.Editor",
+    "references": [
+        "LogicCuteGuy.DigHoleIt.Shared",
+        "LogicCuteGuy.DigHoleIt.Core",
+        "LogicCuteGuy.DigHoleIt.Standalone"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

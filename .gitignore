@@ -1,0 +1,24 @@
+# OS and IDE
+.DS_Store
+Thumbs.db
+desktop.ini
+.vs/
+.vscode/
+.idea/
+*.swp
+*.csproj
+*.sln
+*.user
+
+# Unity leftovers that should never ship in the package
+*.pidb
+*.pdb
+*.mdb
+*.unitypackage
+
+# Created by accident in the package folder
+Runtime/Udon/New Lighting Settings.lighting
+Runtime/Udon/New Lighting Settings.lighting.meta
+
+# Empty folder (git cannot track it; its .meta alone would warn on import)
+Tests/Editor/Udon.meta

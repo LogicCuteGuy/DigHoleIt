@@ -1,0 +1,29 @@
+{
+    "name": "LogicCuteGuy.DigHoleIt.Udon.Editor",
+    "rootNamespace": "LogicCuteGuy.DigHoleIt.Udon.Editor",
+    "references": [
+        "LogicCuteGuy.DigHoleIt.Shared",
+        "LogicCuteGuy.DigHoleIt.Core",
+        "LogicCuteGuy.DigHoleIt.Editor",
+        "LogicCuteGuy.DigHoleIt.Udon",
+        "UdonSharp.Editor",
+        "UdonSharp.Runtime",
+        "VRC.Udon",
+        "VRC.Udon.Editor",
+        "VRC.SDKBase",
+        "VRC.SDK3"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "VRC_SDK_VRCSDK3"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
