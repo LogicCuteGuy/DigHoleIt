@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.0] - 2026-09-28
+
+### Added
+- Example scenes in the package's `Example` folder: the VRChat demo, the standalone demo and the showcase scene of the README screenshots (trees and details in a pit and a cave). Each has its own terrain, zone data and materials.
+
 ## [0.5.0] - 2026-09-28
 
 ### Added

@@ -64,6 +64,18 @@ Or clone this repository into your project's `Packages/com.logiccuteguy.digholei
 
 The package picks its runtime from the project. With the VRChat SDK only the Udon runtime compiles; without it only the standalone runtime does. To keep the standalone runtime in a VRChat project, add the scripting define `DIGHOLEIT_STANDALONE`.
 
+## Example scenes
+
+The package's `Example` folder has ready-made scenes. Open them from the Project window under *Packages > DigHoleIt - Diggable Voxel Terrain > Example*:
+
+| Scene | What it shows |
+|---|---|
+| `VRChat/DigHoleItVRChatDemo` | A baked Dig Zone with three shovels (dig, add, paint) and a VRCWorld spawn. Press Play with ClientSim, pick up a shovel and hold Use. VRChat projects only. |
+| `Standalone/DigHoleItStandaloneDemo` | A baked zone and a camera with `DigToolStandalone`. Press Play: the left mouse button digs, the right adds and the middle paints. Non-VRChat projects only. |
+| `Showcase/DigHoleItShowcase` | The scene of the screenshots above: a forest terrain with a pit and a cave, trees and grass inside them, and trees hanging from the cave ceiling. The disabled cameras *Shot Pit* and *Shot Cave* hold the screenshot views. |
+
+A package installed from a Git URL is read-only, so its example scenes can't be saved or re-baked. To change one, copy its folder into `Assets` first (or install through VCC, which puts the package in `Packages` where it can be edited).
+
 ## Quick start (VRChat)
 
 1. **Tools > DigHoleIt > Create VRChat Demo Scene** builds a terrain, a baked Dig Zone, a spawn and three shovels (dig, add, paint). Press Play with ClientSim, pick up a shovel and hold Use.

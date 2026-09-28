@@ -1,0 +1,263 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: DigHoleItStandaloneDemo_DigZone_Material
+  m_Shader: {fileID: 4800000, guid: 3151e4969f53b8248955b23fb286e463, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _Control:
+        m_Texture: {fileID: -7290577648136476335, guid: 86fab886e71544ca8541d17931abfaf1, type: 2}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Control1:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Control2:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Control3:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DugNormal:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DugTex:
+        m_Texture: {fileID: 2800000, guid: 36ae3981afe740abaabbec58f74477df, type: 2}
+        m_Scale: {x: 0.5, y: 0.5}
+        m_Offset: {x: 0, y: 0}
+    - _HeightTex:
+        m_Texture: {fileID: 9106428564070169599, guid: 86fab886e71544ca8541d17931abfaf1, type: 2}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal0:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal1:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal10:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal11:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal12:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal13:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal14:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal15:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal2:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal3:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal4:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal5:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal6:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal7:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal8:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Normal9:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat0:
+        m_Texture: {fileID: 2800000, guid: aec8a9e459b843fb8dcc6bf402fb6d08, type: 2}
+        m_Scale: {x: 0.25, y: 0.25}
+        m_Offset: {x: 0, y: 0}
+    - _Splat1:
+        m_Texture: {fileID: 2800000, guid: d450a3e1ab64496f9bed150d25b146f4, type: 2}
+        m_Scale: {x: 0.25, y: 0.25}
+        m_Offset: {x: 0, y: 0}
+    - _Splat10:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat11:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat12:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat13:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat14:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat15:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat2:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat3:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat4:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat5:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat6:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat7:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat8:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _Splat9:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _DugDepth: 0.3
+    - _DugFade: 0.6
+    - _DugNormalScale: 1
+    - _DugOcclusion: 0.5
+    - _DugOcclusionDepth: 4
+    - _DugSmoothness: 0.1
+    - _HoleMargin: 0.03
+    - _Metallic0: 0
+    - _Metallic1: 0
+    - _Metallic10: 0
+    - _Metallic11: 0
+    - _Metallic12: 0
+    - _Metallic13: 0
+    - _Metallic14: 0
+    - _Metallic15: 0
+    - _Metallic2: 0
+    - _Metallic3: 0
+    - _Metallic4: 0
+    - _Metallic5: 0
+    - _Metallic6: 0
+    - _Metallic7: 0
+    - _Metallic8: 0
+    - _Metallic9: 0
+    - _NormalScale0: 1
+    - _NormalScale1: 1
+    - _NormalScale10: 1
+    - _NormalScale11: 1
+    - _NormalScale12: 1
+    - _NormalScale13: 1
+    - _NormalScale14: 1
+    - _NormalScale15: 1
+    - _NormalScale2: 1
+    - _NormalScale3: 1
+    - _NormalScale4: 1
+    - _NormalScale5: 1
+    - _NormalScale6: 1
+    - _NormalScale7: 1
+    - _NormalScale8: 1
+    - _NormalScale9: 1
+    - _Smoothness0: 0
+    - _Smoothness1: 0
+    - _Smoothness10: 0
+    - _Smoothness11: 0
+    - _Smoothness12: 0
+    - _Smoothness13: 0
+    - _Smoothness14: 0
+    - _Smoothness15: 0
+    - _Smoothness2: 0
+    - _Smoothness3: 0
+    - _Smoothness4: 0
+    - _Smoothness5: 0
+    - _Smoothness6: 0
+    - _Smoothness7: 0
+    - _Smoothness8: 0
+    - _Smoothness9: 0
+    - _TriplanarSharpness: 6
+    m_Colors:
+    - _ControlST: {r: 0.028759057, g: 0.028759057, b: -0.8804348, a: -0.8804348}
+    - _DugColor: {r: 1, g: 1, b: 1, a: 1}
+    - _HeightRange: {r: 6.7450404, g: 8.630653, b: 0, a: 0}
+    - _HeightST: {r: 0.03076923, g: 0.03076923, b: -0.97692305, a: -0.97692305}
+    - _HoleRect: {r: 32.625, g: 32.625, b: 63.375, a: 63.375}
+    - _TerrainPos: {r: 0, g: 0, b: 0, a: 0}
+    - _Tint0: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint1: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint10: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint11: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint12: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint13: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint14: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint15: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint2: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint3: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint4: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint5: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint6: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint7: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint8: {r: 1, g: 1, b: 1, a: 1}
+    - _Tint9: {r: 1, g: 1, b: 1, a: 1}
+  m_BuildTextureStacks: []

@@ -1,7 +1,7 @@
 {
   "name": "com.logiccuteguy.digholeit",
   "displayName": "DigHoleIt - Diggable Voxel Terrain",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "unity": "2022.3",
   "description": "Digger-style diggable terrain. Bakes Dig Zones over Unity Terrain into a quantized SDF grid and meshes it with Surface Nets. Dig, add and paint terrain layers at runtime or with Terrain-style brushes in the editor. Ships a VRChat (UdonSharp) runtime with networked edits and late-joiner replay, plus a plain C# runtime for standalone games.",
   "keywords": [

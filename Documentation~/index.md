@@ -4,7 +4,7 @@ DigHoleIt turns part of a Unity Terrain into diggable voxel terrain. You place a
 
 | Page | What it covers |
 |---|---|
-| [Getting started](getting-started.md) | Installing the package, the demo scenes, and setting up a zone on your own terrain |
+| [Getting started](getting-started.md) | Installing the package, the example scenes, and setting up a zone on your own terrain |
 | [Dig Zones](dig-zones.md) | Zone settings, baking, zone height, trees and details, moving and resizing, terrain holes, following terrain edits, terrain layers and baked lighting |
 | [Editor brushes](editor-brushes.md) | Sculpting and painting zones in the editor |
 | [VRChat runtime](vrchat-runtime.md) | `DigZoneRuntime`, `DigTool` and `DigSync` (UdonSharp) |
@@ -34,6 +34,7 @@ Editor              Baker, trees and details (DigFoliageBaker, DigFoliageSync), 
 Editor/Udon         Bridge that copies baked data into the Udon runtime, Udon inspectors, VRChat demo builder
 Shaders             DigHoleIt/DigTerrain (Standard), DigHoleIt/DigTerrain Lite (Quest), DigHoleIt/DigDetail (terrain details in zones)
 Tests/Editor        EditMode tests
+Example             Example scenes: VRChat demo, standalone demo, showcase (trees and details in a pit and a cave)
 ```
 
 ## Source and support

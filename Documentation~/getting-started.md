@@ -16,12 +16,22 @@ Pick one:
   `https://vpm.logiccuteguy.com/index.json` in *Settings > Packages > Add Repository*. Then add **DigHoleIt** to your project; VCC installs LCGUdonSharp with it. The listing may lag behind the newest GitHub release.
 - **Git URL:** *Window > Package Manager > + > Add package from git URL* and enter
   `https://github.com/LogicCuteGuy/DigHoleIt.git`.
-  Add `#v0.5.0` (or another tag) to the end to pin a version.
+  Add `#v0.6.0` (or another tag) to the end to pin a version.
 - **Embedded:** clone or copy the repository into your project's `Packages/com.logiccuteguy.digholeit` folder.
 
 With a Git URL or embedded install in a VRChat project, install LCGUdonSharp first. The Udon runtime does not compile without it.
 
-## Demo scenes
+## Example scenes
+
+The package ships example scenes in its `Example` folder (*Packages > DigHoleIt - Diggable Voxel Terrain > Example* in the Project window):
+
+- **`VRChat/DigHoleItVRChatDemo`** (VRChat projects): a baked Dig Zone, a VRCWorld spawn and three shovels (dig, add, paint). Press Play with ClientSim, pick up a shovel and hold Use.
+- **`Standalone/DigHoleItStandaloneDemo`** (non-VRChat projects): a baked zone and a camera with `DigToolStandalone`. Press Play: the left mouse button digs, the right adds and the middle paints. In a VRChat project its runtime scripts show as missing, since the standalone runtime doesn't compile there.
+- **`Showcase/DigHoleItShowcase`**: the scene of the README screenshots. A 200 m forest terrain with a pit, a rock with a cave under it, trees and grass inside both, and trees hanging from the cave ceiling. It has no runtime; it shows what the editor tools make. The disabled cameras *Shot Pit* and *Shot Cave* hold the screenshot views.
+
+Each example keeps its terrain, zone data and materials in its own folder, so it doesn't touch your assets. A package installed from a Git URL is read-only: the scenes open, but saving or re-baking them fails. Copy the example's folder into `Assets` to change it.
+
+You can also build fresh demo scenes in your project:
 
 - **Tools > DigHoleIt > Create VRChat Demo Scene** builds a terrain, a baked Dig Zone, a VRCWorld spawn and three shovels (dig, add, paint). Press Play with ClientSim, pick up a shovel and hold Use.
 - **Tools > DigHoleIt > Create Standalone Demo Scene** (non-VRChat projects only) builds a terrain, a baked zone and a camera with `DigToolStandalone`. Press Play: the left mouse button digs, the right adds and the middle paints.
