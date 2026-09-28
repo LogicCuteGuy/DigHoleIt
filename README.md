@@ -9,8 +9,9 @@ Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRCha
 - In VRChat, edits sync to every player, including late joiners.
 - Shading matches the terrain's own layers (as many as it has, up to 16), with a "dug soil" material underground.
 - Works with baked lighting: chunks are lightmapped, and chunks dug at runtime switch to light probes.
+- Terrain trees and details (grass, flowers, detail meshes) show inside zones and go away where the ground under them is dug or buried. Paint them into zones with the DigHoleIt: Paint Trees / Paint Details terrain tools.
 - Terrain-style editor brushes: Dig, Add, Paint, Smooth and Reset, with shapes, size and strength.
-- Zones follow the terrain: raise, lower or paint the terrain under a zone and it updates, keeping your sculpting.
+- Zones follow the terrain: raise, lower or paint the terrain under a zone and it updates, keeping your sculpting. A bake raises the zone when the terrain reaches its top.
 - Move and resize zones with box handles; re-baking keeps your sculpting.
 - Grids are stored run-length compressed (a terrain grid shrinks to a few percent). In VRChat, players decode only the chunks that get dug, reset is instant, and only chunks with a surface have a GameObject, so large zones stay light.
 - One brush and mesher implementation, shared by the Udon runtime and plain C#.
@@ -20,6 +21,12 @@ Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRCha
 | Tunnel through a hill | Dug pit and added soil |
 |---|---|
 | ![Tunnel dug through a hill, with a painted sand path](Documentation~/images/tunnel.jpg) | ![A pit dug into the terrain next to a mound of added soil](Documentation~/images/pit.jpg) |
+
+**Painting inside holes.** DigHoleIt: Paint Trees and Paint Details reach into dug holes: trees and grass on a pit floor and its walls, and trees hanging from a cave ceiling with flowers growing on it:
+
+| Trees and grass in a pit | Under a cave ceiling |
+|---|---|
+| ![Trees and grass painted on the floor and walls of a dug pit](Documentation~/images/paint-in-hole.jpg) | ![Trees hanging from a cave ceiling, with flowers on the ceiling and the cave floor](Documentation~/images/paint-in-cave.jpg) |
 
 **Sculpting in the editor.** The Dig Sculpt tool, with its brush panel in the Scene view:
 
@@ -61,7 +68,7 @@ The package picks its runtime from the project. With the VRChat SDK only the Udo
 ## Documentation
 
 - [Getting started](Documentation~/getting-started.md)
-- [Dig Zones](Documentation~/dig-zones.md): settings, baking, resizing, terrain holes, following terrain edits
+- [Dig Zones](Documentation~/dig-zones.md): settings, baking, zone height, trees and details, resizing, terrain holes, following terrain edits
 - [Editor brushes](Documentation~/editor-brushes.md)
 - [VRChat runtime](Documentation~/vrchat-runtime.md)
 - [Standalone runtime](Documentation~/standalone-runtime.md)
@@ -73,7 +80,7 @@ See the [changelog](CHANGELOG.md) for what changed in each version.
 
 ## Tests
 
-EditMode tests in `Tests/Editor` cover grid compression (round trips, stepped decoding, corrupt streams, data asset saving), per-chunk storage (edits and meshes match the whole grid, incremental repacking), edit packing, brush idempotence and edit-box limits, painting, Surface Nets winding, watertight output, chunked output matching single-chunk output, and cutting chunk meshes to the terrain hole. Run them from the Test Runner; the package is listed in `testables`.
+EditMode tests in `Tests/Editor` cover grid compression (round trips, stepped decoding, corrupt streams, data asset saving), per-chunk storage (edits and meshes match the whole grid, incremental repacking), edit packing, brush idempotence and edit-box limits, painting, Surface Nets winding, watertight output, chunked output matching single-chunk output, cutting chunk meshes to the terrain hole, and when trees and details over a zone stay or go (whole grid and per chunk). Run them from the Test Runner; the package is listed in `testables`.
 
 ## Author
 

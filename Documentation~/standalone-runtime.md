@@ -25,6 +25,8 @@ Bake the zone as usual, then click **Add Standalone Runtime** in the zone inspec
 
 Radii are in metres and are capped by the zone's Max Brush Radius.
 
+Terrain trees and details in the zone go away where the ground under them is dug away or buried, and come back on `ResetToBaked`. The detail renderers get a live foliage mask through a MaterialPropertyBlock, so the materials (assets) are never changed.
+
 ## DigToolStandalone
 
 Mouse digging from a camera, using the legacy Input Manager: the left button digs, the right adds and the middle paints.

@@ -181,6 +181,41 @@ namespace LogicCuteGuy.DigHoleIt.Tests
             }
         }
 
+        /// <summary>Undo gives the zone new arrays; only the chunks they change (and edits not packed yet) are encoded again.</summary>
+        [Test]
+        public void ZoneDataRepacksOnlyWhatUndoChanged()
+        {
+            var data = ScriptableObject.CreateInstance<DigZoneData>();
+            try
+            {
+                data.nx = Nx; data.ny = Ny; data.nz = Nz; data.chunkCells = N;
+                data.grid = TerrainGrid();
+                int[] edit = { 0, 0, 0, Nx, Ny, Nz };
+                var changed = new int[6];
+                data.GetChunkPacks(out _, out _, out _, out _);
+
+                // A marked edit not packed yet, then undo brings new arrays that differ from the live ones in a box.
+                DigBrush.Stamp(data.grid, null, Nx, Ny, edit, 20f, 15f, 20f, 4f, DigFormat.OpDig, 0, changed);
+                data.MarkChanged(changed);
+                byte[] live = data.grid;
+                int liveVersion = data.gridVersion;
+                byte[] undone = (byte[])live.Clone();
+                DigBrush.Stamp(undone, null, Nx, Ny, edit, 40f, 12f, 5f, 3f, DigFormat.OpAdd, 0, changed);
+                data.grid = undone;
+                data.gridVersion = 1; // restored from the undo record
+                data.AdoptUndo(live, null, liveVersion, changed);
+
+                data.GetChunkPacks(out byte[] g, out int[] o, out _, out _);
+                DigChunkPacker.Pack(undone, Nx, Ny, Nz, N, out byte[] full, out int[] fullOffsets);
+                CollectionAssert.AreEqual(full, g);
+                CollectionAssert.AreEqual(fullOffsets, o);
+            }
+            finally
+            {
+                Object.DestroyImmediate(data);
+            }
+        }
+
         [Test]
         public void ClipXZ_CutsTheMeshToTheBox()
         {

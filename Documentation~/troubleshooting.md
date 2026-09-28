@@ -41,3 +41,21 @@ Dug chunks are lit by light probes above the ground and darkened with depth. Tun
 
 **The voxel surface looks gray or untextured.**
 Click **Apply Material** to refill the material from the terrain layers. After adding terrain layers, Bake the zone so it gets their splat maps. DigTerrain Lite shades up to 8 layers.
+
+**Trees are missing from the terrain where a zone is (zones baked before 0.5.0).**
+A terrain deletes the trees in its holes. Zones baked by older versions didn't keep them, so those trees are gone from the terrain data. Paint them again with **DigHoleIt: Paint Trees**; zones now keep the trees in their hole and give them back when the hole is filled.
+
+**Unity's Paint Trees or Paint Details does nothing inside a zone.**
+The terrain can't be hit through its hole, and it refuses trees there. Use **DigHoleIt: Paint Trees** / **DigHoleIt: Paint Details** in the Paint Terrain list: the same brushes, reaching inside zones too. If DigHoleIt: Paint Trees places nothing, select a tree in its list first (and for details, add a detail with **Edit Details** and select it).
+
+**No tool paints details on the demo terrain.**
+A terrain made by script starts without a detail map (**Detail Resolution** 0); the demo terrain of DigHoleIt 0.4.0 and earlier is one. Neither Unity's Paint Details nor DigHoleIt: Paint Details can paint on it. Set **Detail Resolution** in the terrain's Settings (Mesh Resolution), or click **Set Detail Resolution To 512** in DigHoleIt: Paint Details.
+
+**Trees painted with Unity's Paint Trees ignore Tree Height and Tree Width.**
+Unity's terrain doesn't scale a tree's transform: it passes the size to the tree's shader, and only the Nature (Tree Creator, Soft Occlusion) and SpeedTree shaders use it. A prefab with the Standard shader, or most other shaders, is drawn at full size whatever the height and width, and the prefab root's scale is ignored too. Inside zones the trees are copies of the prefab scaled by their transform, so they follow the height and width. To size terrain trees, use a Nature or SpeedTree shader on the prefab, or scale the model itself (its import Scale Factor).
+
+**Trees or grass are missing inside a zone.**
+Check **Trees** / **Details** on the zone, and that the zone is baked. Details beyond the terrain's **Detail Distance** aren't drawn. Trees and details are removed where the ground under them was dug away or built over; **Reset To Terrain** (editor) or a runtime reset brings them back.
+
+**Baking raised the top of my zone.**
+The terrain reached the top of the box, which would cut the surface off flat. Bake raises the top to **Headroom Above Terrain** over the highest terrain point and logs it. Lower Headroom Above Terrain for a flatter box.

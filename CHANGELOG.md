@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.0] - 2026-09-28
+
+### Added
+- Terrain trees and details inside zones. A terrain draws neither in its holes, so zones show them: trees as copies of their prefabs, details (grass, billboard grass, detail meshes) as one merged mesh per chunk column with the new **DigHoleIt/DigDetail** shader (the terrain's scatter, healthy/dry colours, wind and Detail Distance). **Trees** and **Details** toggles on the zone (on by default). `DigFoliageBaker`, `DigFoliageSync`.
+- Trees stand where they are placed (also on pit and tunnel floors, slopes and walls), details grow on the zone's top surface. They go away where the ground under them is dug away or buried, in the editor and at runtime (VRChat and standalone), and come back on undo or reset. `DigFoliage` (Runtime/Shared) checks the surface at each one's anchor (`GridStands` for details, `PointStands` / `StandsInCell` for trees); the editor stores the details' anchors and state as a foliage mask texture (`DigZoneData.foliageMask`) that the detail shader reads, and the runtimes give the detail renderers a live copy through a MaterialPropertyBlock. `DigZoneRuntime.foliageMask` / `detailRenderers` / `treeObjects` / `treeAnchors`.
+- Trees and details on cave ceilings, walls and tunnel floors. Trees hang from ceilings (**Tree Direction In Zones**: Upright or Along Surface; `DigTreeInstance.up`). Details there are kept by the zone (`DigZoneData.surfaceDetails`, `DigDetailInstance`), since the terrain's detail map only covers the top surface; they get their own foliage mask texels (rows above the grid columns) and anchors (`DigZone.surfaceDetailAnchors` / `surfaceDetailBuckets`, copied to `DigZoneRuntime`).
+- **Surface Angle** on DigHoleIt: Paint Trees and Paint Details: paint only floors, walls, ceilings or any angle range (0° up to 180°), inside zones and on terrain slopes.
+- **DigHoleIt: Paint Trees** and **DigHoleIt: Paint Details** terrain tools: Unity's tree and detail brushes, with their own settings and inspector, that also paint inside Dig Zones (Unity's brushes can't hit the terrain through its hole). **Brush Axis In Zones** (Paint Trees): Surface Normal (default), World Up or View. Inside a zone they paint the surface under the mouse from any view angle: trees on floors, slopes and walls within the brush radius, details only where their surface is within the brush radius in height, so a stroke in a pit doesn't reach the rim or the terrain around the hole.
+- Zones follow changes to the terrain's trees, details, prototypes and detail/wind settings, and undo, once the stroke ends (`ObjectChangeEvents`).
+- A bake raises the zone's top to Headroom Above Terrain over the terrain when the terrain reaches the top of the box (`DigZoneBaker.GrowToTerrain`), so the surface is never cut off flat. The bottom stays, so sculpting is kept.
+
+### Fixed
+- The demo terrain had no detail map (a TerrainData made by script starts with Detail Resolution 0), so Unity's Paint Details and DigHoleIt: Paint Details painted nothing on it. New demos get 512; DigHoleIt: Paint Details warns about such a terrain and can set it.
+- Re-baking a zone moved its trees on pit and cave floors up onto the terrain surface (filling the hole gave them back to the terrain before cutting it again). They now stay where they were (`DigTerrainHoles.KeepPlacement`).
+- Undo and redo could take seconds with a large zone in the scene. Every undo, of anything, re-sampled every zone from its terrain; now only zones whose terrain the undo changed are re-synced. Undoing a sculpt stroke remeshed and re-encoded every chunk; now only the chunks it changed. Undo no longer decodes grids it didn't change, and undoing tree painting rebuilds only the trees. Starting a sculpt stroke no longer re-encodes the zone's base grid.
+- Baking a zone deleted the terrain's trees inside its hole (a terrain deletes the trees in its holes). Zones now keep them (`DigZoneData.terrainTrees`) and give them back when the hole is filled: Clear, Delete Zone, Fix Leftover Holes and every re-bake. Trees on cells another zone's hole still covers go to that zone.
+
+### Changed
+- `DigZoneData.gridVersion` is a property now (saved as before). `DigZoneData.AdoptUndo` keeps the per-chunk streams across undo.
+
+### Upgrading from 0.4
+- Bake your zones again to get their trees and details. Trees that older bakes deleted from the terrain can't be recovered; paint them again with DigHoleIt: Paint Trees.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added

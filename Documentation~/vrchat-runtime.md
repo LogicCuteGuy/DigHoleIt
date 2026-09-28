@@ -49,6 +49,7 @@ Methods other behaviours can call:
 | `sync` | The zone's `DigSync`. Without it, edits stay local to each player. |
 | `budgetMsDesktop` / `budgetMsMobile` | Milliseconds per frame for applying edits and meshing (default 2.5 / 1.2). The chunk nearest the player is meshed first. |
 | `logTimings` | Logs meshing times to the console. |
+| `foliageMask`, `detailRenderers`, `treeObjects` | The zone's terrain trees and details, filled in by the bridge. When a remeshed chunk finds the ground under a tree or detail (also on walls and cave ceilings: `surfaceDetailAnchors`) dug away or buried, the tree is deactivated and the detail renderers get a live copy of the foliage mask (through a MaterialPropertyBlock). A reset brings them back. |
 
 Edit ops (`DigFormat`): `OpDig = 0`, `OpAdd = 1`, `OpPaint = 3`. `OpSmooth = 2` is editor only and is rejected at runtime.
 

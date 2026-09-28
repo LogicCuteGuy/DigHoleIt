@@ -5,6 +5,70 @@ using UnityEngine.Serialization;
 
 namespace LogicCuteGuy.DigHoleIt
 {
+    /// <summary>A terrain tree a Dig Zone keeps while its hole is cut: the fields of Unity's TreeInstance.</summary>
+    [Serializable]
+    public struct DigTreeInstance
+    {
+        /// <summary>Position on the terrain, 0..1 on each axis like TreeInstance.position (y = height / terrain height).</summary>
+        public Vector3 position;
+        public float widthScale;
+        public float heightScale;
+        /// <summary>Radians around the up axis.</summary>
+        public float rotation;
+        public Color32 color;
+        public Color32 lightmapColor;
+        public int prototypeIndex;
+        /// <summary>
+        /// Which way the tree grows inside a zone (a unit vector; zero means straight up, as on the terrain). Trees
+        /// painted under a cave ceiling hang down. The terrain keeps no such thing, so trees given back to it stand up.
+        /// </summary>
+        public Vector3 up;
+
+        /// <summary>The direction the tree grows (straight up when <see cref="up"/> is not set).</summary>
+        public Vector3 Up => up.sqrMagnitude > 1e-6f ? up.normalized : Vector3.up;
+
+        public DigTreeInstance(TreeInstance t)
+        {
+            position = t.position;
+            widthScale = t.widthScale;
+            heightScale = t.heightScale;
+            rotation = t.rotation;
+            color = t.color;
+            lightmapColor = t.lightmapColor;
+            prototypeIndex = t.prototypeIndex;
+            up = Vector3.zero;
+        }
+
+        public TreeInstance ToTreeInstance() => new TreeInstance
+        {
+            position = position,
+            widthScale = widthScale,
+            heightScale = heightScale,
+            rotation = rotation,
+            color = color,
+            lightmapColor = lightmapColor,
+            prototypeIndex = prototypeIndex,
+        };
+    }
+
+    /// <summary>
+    /// A detail (grass, flower, detail mesh) a zone keeps on its own voxel surface where the terrain's detail map can't
+    /// put one: walls, cave ceilings, tunnel floors. Painted with DigHoleIt: Paint Details.
+    /// </summary>
+    [Serializable]
+    public struct DigDetailInstance
+    {
+        /// <summary>Root position in world units from the terrain's position (stays put when the zone is re-baked).</summary>
+        public Vector3 position;
+        /// <summary>Which way it grows: the surface normal where it was painted.</summary>
+        public Vector3 normal;
+        /// <summary>Radians around <see cref="normal"/>.</summary>
+        public float rotation;
+        public float width;
+        public float height;
+        public int prototypeIndex;
+    }
+
     /// <summary>
     /// Baked state of one Dig Zone: the SDF grid, chunk meshes (sub-assets), shader textures, and the terrain
     /// hole bookkeeping needed to undo the cut. Written by the editor baker and sculpt tool.
@@ -22,7 +86,10 @@ namespace LogicCuteGuy.DigHoleIt
         [NonSerialized] public byte[] grid;
         /// <summary>Paint layer per sample (see DigFormat). Null or all zero when the zone was never painted.</summary>
         [NonSerialized] public byte[] paint;
-        /// <summary>The grid as sampled from the terrain, before sculpting. A re-bake keeps samples that differ from it.</summary>
+        /// <summary>
+        /// The grid as sampled from the terrain, before sculpting. A re-bake keeps samples that differ from it. Assign a new
+        /// array to change it, never change it in place.
+        /// </summary>
         [NonSerialized] public byte[] baseGrid;
 
         // What is saved: the three grids, run-length encoded.
@@ -34,10 +101,13 @@ namespace LogicCuteGuy.DigHoleIt
         [SerializeField, HideInInspector, FormerlySerializedAs("paint")] private byte[] legacyPaint;
         [SerializeField, HideInInspector, FormerlySerializedAs("baseGrid")] private byte[] legacyBaseGrid;
 
-        // The arrays and version the encoded copies were made from.
+        // The arrays and version the encoded copies were made from, and those encoded copies.
         [NonSerialized] private byte[] _packedGrid;
         [NonSerialized] private byte[] _packedPaint;
         [NonSerialized] private byte[] _packedBase;
+        [NonSerialized] private byte[] _packedGridRle;
+        [NonSerialized] private byte[] _packedPaintRle;
+        [NonSerialized] private byte[] _packedBaseRle;
         [NonSerialized] private int _packedVersion;
         [NonSerialized] private bool _packed;
         /// <summary>World position of sample (0, 0, 0) at the last bake (valid when <see cref="hasOrigin"/>).</summary>
@@ -71,7 +141,19 @@ namespace LogicCuteGuy.DigHoleIt
         /// <summary>Inclusive editable sample box {minX, minY, minZ, maxX, maxY, maxZ}.</summary>
         public int[] editBox = new int[6];
         /// <summary>Bumped on every grid change so editor tools can tell when undo/redo changed the grid.</summary>
-        [HideInInspector] public int gridVersion;
+        public int gridVersion
+        {
+            get => _gridVersion;
+            set
+            {
+                _gridVersion = value;
+                _liveVersion = value;
+            }
+        }
+
+        [SerializeField, HideInInspector, FormerlySerializedAs("gridVersion")] private int _gridVersion;
+        // The version of the grids in memory. Deserializing (undo, redo) overwrites _gridVersion but not this.
+        [NonSerialized] private int _liveVersion;
 
         [Header("Chunks")]
         public Mesh[] chunkMeshes;
@@ -92,6 +174,33 @@ namespace LogicCuteGuy.DigHoleIt
         public Vector2 heightRange;
         /// <summary>World-space terrain hole rectangle (minX, minZ, maxX, maxZ).</summary>
         public Vector4 holeRect;
+
+        [Header("Trees and details")]
+        /// <summary>
+        /// The terrain's trees inside the zone's hole. A terrain deletes the trees in its holes (and refuses new ones
+        /// there), so the zone takes them over when it cuts its hole and gives them back when the hole is filled.
+        /// </summary>
+        public DigTreeInstance[] terrainTrees;
+        /// <summary>
+        /// Details on the zone's own surface (walls, cave ceilings, tunnel floors), painted with DigHoleIt: Paint Details.
+        /// The terrain's detail map only covers the top surface, so these stay with the zone.
+        /// </summary>
+        public DigDetailInstance[] surfaceDetails;
+        /// <summary>
+        /// Foliage mask (RGBA32, see <see cref="DigFoliage"/>): where details still stand. Rows 0..nz hold the grid
+        /// columns, the rows above one texel per surface detail. Null when the zone shows none.
+        /// </summary>
+        public Texture2D foliageMask;
+        /// <summary>Merged detail mesh of each chunk column (cx + ChunksX * cz), null where the column has no details.</summary>
+        public Mesh[] detailMeshes;
+        /// <summary>DigHoleIt/DigDetail material of each terrain detail prototype, null for prototypes the zone doesn't show.</summary>
+        public Material[] detailMaterials;
+        /// <summary>Hash of the terrain trees, details and settings the foliage was built from (editor change tracking).</summary>
+        [HideInInspector] public int foliageSignature;
+        /// <summary>The same without the trees (changing only the trees rebuilds only the trees).</summary>
+        [HideInInspector] public int foliageDetailSignature;
+        /// <summary>Trees plus detail meshes the zone built (0: it shows no foliage).</summary>
+        [HideInInspector] public int foliageCount;
 
         [Header("Terrain cut")]
         public TerrainData cutTerrain;
@@ -289,12 +398,13 @@ namespace LogicCuteGuy.DigHoleIt
         /// <summary>Re-encodes the grids if they changed (new arrays, or <see cref="gridVersion"/> bumped).</summary>
         private void Pack()
         {
-            if (_packed && _packedVersion == gridVersion && ReferenceEquals(_packedGrid, grid) &&
-                ReferenceEquals(_packedPaint, paint) && ReferenceEquals(_packedBase, baseGrid))
+            bool sameVersion = _packed && _packedVersion == gridVersion;
+            if (sameVersion && ReferenceEquals(_packedGrid, grid) && ReferenceEquals(_packedPaint, paint) && ReferenceEquals(_packedBase, baseGrid))
                 return;
-            gridRle = DigRleEncoder.Encode(grid);
-            paintRle = DigRleEncoder.Encode(paint);
-            baseGridRle = DigRleEncoder.Encode(baseGrid);
+            if (!sameVersion || !ReferenceEquals(_packedGrid, grid)) gridRle = DigRleEncoder.Encode(grid);
+            if (!sameVersion || !ReferenceEquals(_packedPaint, paint)) paintRle = DigRleEncoder.Encode(paint);
+            // The base grid is replaced, never changed in place (so sculpting doesn't encode it again).
+            if (!_packed || !ReferenceEquals(_packedBase, baseGrid)) baseGridRle = DigRleEncoder.Encode(baseGrid);
             Remember();
         }
 
@@ -303,6 +413,9 @@ namespace LogicCuteGuy.DigHoleIt
             _packedGrid = grid;
             _packedPaint = paint;
             _packedBase = baseGrid;
+            _packedGridRle = gridRle;
+            _packedPaintRle = paintRle;
+            _packedBaseRle = baseGridRle;
             _packedVersion = gridVersion;
             _packed = true;
         }
@@ -325,10 +438,64 @@ namespace LogicCuteGuy.DigHoleIt
                 _packed = false;
                 return;
             }
-            grid = Unpack(gridRle);
-            paint = Unpack(paintRle);
-            baseGrid = Unpack(baseGridRle);
+            // Undo and redo deserialize the whole asset, also when they only touched something else (trees, settings).
+            // A grid whose encoding is unchanged keeps its decoded array, unless that was changed since it was encoded:
+            // decoding a large zone takes long and a lot of memory.
+            bool current = _packed && _packedVersion == _liveVersion;
+            bool sameGrid = current && SameBytes(gridRle, _packedGridRle);
+            bool samePaint = current && SameBytes(paintRle, _packedPaintRle);
+            bool sameBase = current && SameBytes(baseGridRle, _packedBaseRle);
+            grid = sameGrid ? _packedGrid : Unpack(gridRle);
+            paint = samePaint ? _packedPaint : Unpack(paintRle);
+            baseGrid = sameBase ? _packedBase : Unpack(baseGridRle);
+            // Nothing changed: keep the version too, so what was made from these grids stays valid.
+            if (sameGrid && samePaint && sameBase) _gridVersion = _liveVersion;
+            _liveVersion = _gridVersion;
             Remember();
+        }
+
+        private static bool SameBytes(byte[] a, byte[] b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a == null || b == null || a.Length != b.Length) return false;
+            return new ReadOnlySpan<byte>(a).SequenceEqual(b);
+        }
+
+        /// <summary>
+        /// After undo or redo replaced the grid arrays: <paramref name="box"/> ({minX, minY, minZ, maxX, maxY, maxZ},
+        /// inclusive) holds every sample where the new grid and paint differ from the arrays they replaced
+        /// (<paramref name="oldGrid"/>, <paramref name="oldPaint"/>, at version <paramref name="oldVersion"/>). The
+        /// per-chunk streams stay, so <see cref="GetChunkPacks"/> encodes only the chunks that read the box again.
+        /// </summary>
+        public void AdoptUndo(byte[] oldGrid, byte[] oldPaint, int oldVersion, int[] box)
+        {
+            bool packedNow = _packed && _packedVersion == _gridVersion && ReferenceEquals(_packedGrid, grid) &&
+                             ReferenceEquals(_packedPaint, paint) && ReferenceEquals(_packedBase, baseGrid);
+            int v = Math.Max(Math.Max(_gridVersion, oldVersion), _chunkSrcVersion) + 1;
+
+            // The streams were made from the old arrays, and every change to those since is marked.
+            int since = oldVersion - _chunkSrcVersion;
+            int first = _changedVersions.Count - since;
+            bool keep = _gridStreams != null && ReferenceEquals(_chunkSrcGrid, oldGrid) && ReferenceEquals(_chunkSrcPaint, oldPaint) &&
+                        (paint == null) == (oldPaint == null) && since >= 0 && first >= 0;
+            if (keep)
+            {
+                var boxes = _changedBoxes.GetRange(first, since);
+                boxes.Add((int[])box.Clone());
+                _changedVersions.Clear();
+                _changedBoxes.Clear();
+                _chunkSrcGrid = grid;
+                _chunkSrcPaint = paint;
+                _chunkSrcVersion = v;
+                gridVersion = v;
+                foreach (int[] b in boxes) MarkChanged(b);
+            }
+            else
+            {
+                gridVersion = v;
+            }
+            // The encoded copies were just read, so they still match.
+            if (packedNow) _packedVersion = _gridVersion;
         }
 
         private static byte[] Unpack(byte[] rle)

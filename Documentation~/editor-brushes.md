@@ -39,4 +39,4 @@ The brush axis is the surface normal by default. World up and view direction are
 
 ## Undo and the runtime
 
-Every stroke is one undo step. In a VRChat project, the stroke is copied into the zone's `DigZoneRuntime` when you release the mouse, so the uploaded world starts with your sculpting.
+Every stroke is one undo step. Undo and redo remesh only the chunks the stroke changed, and zones whose terrain the undo didn't touch aren't re-synced, so they stay quick on large zones. In a VRChat project, the stroke is copied into the zone's `DigZoneRuntime` when you release the mouse, so the uploaded world starts with your sculpting.

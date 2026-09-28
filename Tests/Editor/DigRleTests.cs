@@ -114,5 +114,45 @@ namespace LogicCuteGuy.DigHoleIt.Tests
                 Object.DestroyImmediate(data);
             }
         }
+
+        /// <summary>Undo and redo deserialize the whole asset; grids they didn't change keep their decoded arrays.</summary>
+        [Test]
+        public void RestoringTheAssetKeepsGridsItDidNotChange()
+        {
+            var data = ScriptableObject.CreateInstance<DigZoneData>();
+            try
+            {
+                data.nx = data.ny = data.nz = 23;
+                byte[] g = TerrainGrid(24);
+                data.baseGrid = g;
+                data.grid = (byte[])g.Clone();
+                data.EnsurePaint()[600] = 2;
+                data.gridVersion++;
+                string saved = JsonUtility.ToJson(data);
+                byte[] grid = data.grid, paint = data.paint, baseGrid = data.baseGrid;
+
+                // Undo of something else in the asset (its trees).
+                data.terrainTrees = new DigTreeInstance[2];
+                JsonUtility.FromJsonOverwrite(saved, data);
+                Assert.AreEqual(0, data.terrainTrees?.Length ?? 0);
+                Assert.AreSame(grid, data.grid);
+                Assert.AreSame(paint, data.paint);
+                Assert.AreSame(baseGrid, data.baseGrid);
+
+                // Undo of a sculpt stroke: the grid changed in place since it was saved, so it is decoded again.
+                byte old = data.grid[700];
+                data.grid[700] = (byte)(old ^ 0x55);
+                data.gridVersion++;
+                JsonUtility.FromJsonOverwrite(saved, data);
+                Assert.AreNotSame(grid, data.grid);
+                Assert.AreEqual(old, data.grid[700]);
+                CollectionAssert.AreEqual(g, data.baseGrid);
+                Assert.AreEqual(2, data.paint[600]);
+            }
+            finally
+            {
+                Object.DestroyImmediate(data);
+            }
+        }
     }
 }

@@ -44,6 +44,12 @@ namespace LogicCuteGuy.DigHoleIt
         }
         private bool[] _dirty;
         private readonly List<int> _dirtyList = new List<int>();
+
+        // Terrain trees and details (see DigFoliage): the live foliage mask (anchors from the baked one) and the texture
+        // the details read it from (made on the first change, so the details read the baked mask until then).
+        private Color32[] _mask;
+        private Texture2D _maskTex;
+        private bool _maskDirty;
         private readonly List<long> _log = new List<long>();
         private readonly int[] _changed = new int[6];
 
@@ -71,6 +77,11 @@ namespace LogicCuteGuy.DigHoleIt
             _created = new MeshFilter[_data.ChunkCount];
             _baked = new BakedChunk[_data.ChunkCount];
             _dirty = new bool[_data.ChunkCount];
+
+            Texture2D mask = _data.foliageMask;
+            // Rows above the grid columns hold the surface details (DigZone.surfaceDetailAnchors).
+            if (mask != null && mask.isReadable && mask.width == _data.nx + 1 && mask.height >= _data.nz + 1)
+                _mask = mask.GetPixels32();
         }
 
         public bool Contains(Vector3 world)
@@ -135,6 +146,13 @@ namespace LogicCuteGuy.DigHoleIt
             foreach (int ci in _dirtyList) _dirty[ci] = false;
             _dirtyList.Clear();
 
+            if (_mask != null)
+            {
+                _mask = _data.foliageMask.GetPixels32();
+                _maskDirty = _maskTex != null;
+                for (int ci = 0; ci < _data.ChunkCount; ci++) ShowTrees(ci);
+            }
+
             // The grid is the baked one again, so every remeshed chunk gets its baked mesh and lightmap back.
             for (int ci = 0; ci < _meshes.Length; ci++)
             {
@@ -192,8 +210,110 @@ namespace LogicCuteGuy.DigHoleIt
                 int ci = _dirtyList[k];
                 _dirty[ci] = false;
                 Rebuild(ci);
+                UpdateFoliage(ci);
             }
             _dirtyList.RemoveRange(0, n);
+
+            if (_maskDirty)
+            {
+                _maskDirty = false;
+                _maskTex.SetPixels32(_mask);
+                _maskTex.Apply(false);
+            }
+        }
+
+        /// <summary>
+        /// Re-checks the trees and details chunk <paramref name="ci"/> decides (see DigFoliage) after a remesh: they go
+        /// where the surface left their anchor, and come back if it returns.
+        /// </summary>
+        private void UpdateFoliage(int ci)
+        {
+            if (_mask == null) return;
+            int cc = _data.chunkCells, nx = _data.nx, ny = _data.ny, nz = _data.nz, w = nx + 1;
+            int cx = ci % _data.ChunksX, cy = (ci / _data.ChunksX) % _data.ChunksY, cz = ci / (_data.ChunksX * _data.ChunksY);
+            int x0 = cx * cc, x1 = cx == _data.ChunksX - 1 ? nx : x0 + cc - 1;
+            int z0 = cz * cc, z1 = cz == _data.ChunksZ - 1 ? nz : z0 + cc - 1;
+            int y0 = cy * cc, y1 = cy == _data.ChunksY - 1 ? ny - 1 : y0 + cc - 1;
+            bool any = false;
+            for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++)
+            {
+                int i = x + w * z;
+                Color32 c = _mask[i];
+                if (c.a == 0) continue;
+                float anchor = ((c.g << 8) | c.b) / DigFoliage.AnchorScale;
+                int ay = Mathf.Min((int)anchor, ny - 1);
+                if (ay < y0 || ay > y1) continue; // another chunk holds this anchor
+                byte r = DigFoliage.GridStands(_grid, nx, ny, x, z, anchor) ? DigFoliage.Standing : DigFoliage.Removed;
+                if (c.r == r) continue;
+                c.r = r;
+                _mask[i] = c;
+                any = true;
+            }
+            any |= UpdateSurfaceDetails(ci);
+            if (any)
+            {
+                EnsureMaskTexture();
+                _maskDirty = true;
+            }
+            ShowTrees(ci);
+        }
+
+        /// <summary>Re-checks the surface details (walls, cave ceilings) anchored in chunk <paramref name="ci"/>.</summary>
+        private bool UpdateSurfaceDetails(int ci)
+        {
+            Vector3[] anchors = _zone.surfaceDetailAnchors;
+            int[] buckets = _zone.surfaceDetailBuckets;
+            if (anchors == null || buckets == null || buckets.Length != _data.ChunkCount + 1) return false;
+            int texel0 = (_data.nx + 1) * (_data.nz + 1);
+            bool any = false;
+            for (int k = buckets[ci]; k < buckets[ci + 1] && k < anchors.Length && texel0 + k < _mask.Length; k++)
+            {
+                Vector3 a = anchors[k];
+                byte r = DigFoliage.PointStands(_grid, _data.nx, _data.ny, _data.nz, a.x, a.y, a.z) ? DigFoliage.Standing : DigFoliage.Removed;
+                Color32 c = _mask[texel0 + k];
+                if (c.r == r) continue;
+                c.r = r;
+                _mask[texel0 + k] = c;
+                any = true;
+            }
+            return any;
+        }
+
+        private void EnsureMaskTexture()
+        {
+            if (_maskTex != null) return;
+            _maskTex = new Texture2D(_data.foliageMask.width, _data.foliageMask.height, TextureFormat.RGBA32, false, true)
+            {
+                name = "DigFoliageMask",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            // The details' materials are assets: give the renderers the live mask instead of changing them.
+            var block = new MaterialPropertyBlock();
+            if (_zone.detailRenderers != null)
+                foreach (MeshRenderer r in _zone.detailRenderers)
+                {
+                    if (r == null) continue;
+                    r.GetPropertyBlock(block);
+                    block.SetTexture("_DigFoliageMask", _maskTex);
+                    r.SetPropertyBlock(block);
+                }
+        }
+
+        /// <summary>Shows the trees anchored in chunk <paramref name="ci"/> that still stand and hides the others.</summary>
+        private void ShowTrees(int ci)
+        {
+            GameObject[] trees = _zone.treeObjects;
+            Vector3[] anchors = _zone.treeAnchors;
+            int[] buckets = _zone.treeBuckets;
+            if (trees == null || anchors == null || buckets == null || buckets.Length != _data.ChunkCount + 1) return;
+            for (int t = buckets[ci]; t < buckets[ci + 1] && t < trees.Length && t < anchors.Length; t++)
+            {
+                if (trees[t] == null) continue;
+                Vector3 a = anchors[t];
+                trees[t].SetActive(DigFoliage.PointStands(_grid, _data.nx, _data.ny, _data.nz, a.x, a.y, a.z));
+            }
         }
 
         private float ChunkDistance(int ci, Vector3 eye)
@@ -261,6 +381,7 @@ namespace LogicCuteGuy.DigHoleIt
 
         private void OnDestroy()
         {
+            if (_maskTex != null) Destroy(_maskTex);
             if (_meshes == null) return;
             foreach (Mesh m in _meshes) if (m != null) Destroy(m);
         }

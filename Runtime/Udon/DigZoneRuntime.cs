@@ -22,6 +22,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         private const int RowsPerStep = 4;
         private const int QuadsPerStep = 256;
         private const int PaintPerStep = 128;
+        private const int ColumnsPerStep = 64;
 
         [Header("Baked")]
         // Per-chunk run-length encoded grids (DigChunkPacker); hidden because the inspector cannot draw them usefully.
@@ -48,6 +49,19 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         public MeshCollider[] chunkColliders;
         [Tooltip("Inactive chunk object copied when an edit gives an empty chunk a surface.")]
         public GameObject chunkTemplate;
+
+        [Header("Baked Trees And Details")]
+        [Tooltip("Foliage mask the editor baked (see DigFoliage). None when the zone shows no terrain trees or details.")]
+        public Texture2D foliageMask;
+        public MeshRenderer[] detailRenderers;
+        public GameObject[] treeObjects;
+        // Grid position each tree stands on, and where each chunk's trees start (DigZone.treeAnchors / treeBuckets).
+        [HideInInspector] public Vector3[] treeAnchors;
+        [HideInInspector] public int[] treeBuckets;
+        // Details on walls and cave ceilings: grid position and chunk buckets like the trees; detail k has mask texel
+        // (nx + 1) * (nz + 1) + k (DigZone.surfaceDetailAnchors / surfaceDetailBuckets).
+        [HideInInspector] public Vector3[] surfaceDetailAnchors;
+        [HideInInspector] public int[] surfaceDetailBuckets;
 
         [Header("Runtime")]
         [Tooltip("Optional. Without it, edits stay local to this player.")]
@@ -123,6 +137,32 @@ namespace LogicCuteGuy.DigHoleIt.Udon
 
         private Stopwatch _sw;
         private float _budget;
+
+        // Terrain trees and details (DigFoliage). After meshing a chunk, the details whose column anchor it holds and the
+        // trees anchored in it are checked against its samples. The live mask starts as a copy of the baked one.
+        private bool _foliage;
+        private Color32[] _mask;
+        private Texture2D _maskTex;
+        private bool _maskDirty;
+        private int _fCol;
+        private int _fCount;
+        private bool _fChanged;
+        private int _fx0;
+        private int _fz0;
+        private int _fw;
+        private int _fd;
+        private int _fy0;
+        private int _fy1;
+        private int _fr0;
+        private int _fr1;
+        private int _fr2;
+        private int _fr3;
+        private int _fr4;
+        private int _fr5;
+        // Mask texels of surface details changed by the last check (none when _sHi < _sLo).
+        private int _sLo;
+        private int _sHi;
+        private bool[] _treeBaked;
 
         private void Start()
         {
@@ -203,6 +243,14 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             _tris = new int[SurfaceNets.TriBufferSize(chunkCells)];
             _rowCount = SurfaceNets.RowCount(chunkCells);
 
+            _foliage = foliageMask != null && (treeObjects != null && treeObjects.Length > 0 || detailRenderers != null && detailRenderers.Length > 0);
+            if (_foliage && treeObjects != null)
+            {
+                // Which trees the bake left standing, for resets.
+                _treeBaked = new bool[treeObjects.Length];
+                for (int t = 0; t < treeObjects.Length; t++) _treeBaked[t] = treeObjects[t] != null && treeObjects[t].activeSelf;
+            }
+
             _sw = new Stopwatch();
 #if UNITY_ANDROID || UNITY_IOS
             _budget = budgetMsMobile;
@@ -251,6 +299,24 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             _decoded[_decodedCount] = ci;
             _decodedCount++;
             return true;
+        }
+
+        /// <summary>
+        /// Puts the grid columns chunk <paramref name="ci"/> owns into _fx0, _fz0, _fw, _fd (its own cells; the last chunk
+        /// along an axis also owns the last sample), and the lowest and highest sample it owns as the one below an anchor
+        /// into _fy0, _fy1 (DigFoliageBaker.AnchorChunk).
+        /// </summary>
+        private void _OwnColumns(int ci)
+        {
+            int cx = ci % chunksX;
+            int cy = (ci / chunksX) % chunksY;
+            int cz = ci / (chunksX * chunksY);
+            _fx0 = cx * chunkCells;
+            _fz0 = cz * chunkCells;
+            _fy0 = cy * chunkCells;
+            _fw = (cx == chunksX - 1 ? nx : _fx0 + chunkCells - 1) - _fx0 + 1;
+            _fd = (cz == chunksZ - 1 ? nz : _fz0 + chunkCells - 1) - _fz0 + 1;
+            _fy1 = cy == chunksY - 1 ? ny - 1 : _fy0 + chunkCells - 1;
         }
 
         /// <summary>
@@ -428,6 +494,20 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 }
             }
             _decodedCount = 0;
+
+            if (_foliage && _mask != null)
+            {
+                // Back to the baked grid: everything the bake left standing stands again.
+                _mask = foliageMask.GetPixels32();
+                if (_maskTex != null)
+                {
+                    _maskTex.SetPixels32(_mask);
+                    _maskDirty = true;
+                }
+                if (treeObjects != null && _treeBaked != null)
+                    for (int t = 0; t < treeObjects.Length && t < _treeBaked.Length; t++)
+                        if (treeObjects[t] != null) treeObjects[t].SetActive(_treeBaked[t]);
+            }
         }
 
         // ---- Frame loop ----
@@ -462,6 +542,13 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 _StepMesh();
                 _chunkMs += _Elapsed() - before;
             }
+        }
+
+        private void LateUpdate()
+        {
+            if (!_maskDirty) return;
+            _maskDirty = false;
+            _maskTex.Apply(false);
         }
 
         private float _Elapsed()
@@ -580,6 +667,22 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             _triCount = 0;
             _chunkMs = 0f;
             _meshing = true;
+
+            _fCol = 0;
+            _fCount = 0;
+            _fChanged = false;
+            if (_foliage && _LoadMask())
+            {
+                _OwnColumns(ci);
+                _fCount = _fw * _fd;
+                // _r changes when queued edits are applied between mesh steps.
+                _fr0 = _r[0];
+                _fr1 = _r[1];
+                _fr2 = _r[2];
+                _fr3 = _r[3];
+                _fr4 = _r[4];
+                _fr5 = _r[5];
+            }
         }
 
         private void _StepMesh()
@@ -633,12 +736,176 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 int end = Mathf.Min(_quadV + QuadsPerStep, _vertCount);
                 _triCount = SurfaceNets.BuildQuads(chunkCells, _cellVert, _vMask, _vCell, _vPos, _quadV, end, _tris, _triCount);
                 _quadV = end;
-                if (_quadV >= _vertCount) _phase = 3;
+                if (_quadV >= _vertCount) _phase = _fCount > 0 ? 5 : 3;
+                return;
+            }
+
+            if (_phase == 5)
+            {
+                // Details: the chunk's own columns whose anchor lies in its own samples.
+                int end = Mathf.Min(_fCol + ColumnsPerStep, _fCount);
+                int w = _fr3 - _fr0 + 1;
+                int h = _fr4 - _fr1 + 1;
+                int stride = nx + 1;
+                for (int k = _fCol; k < end; k++)
+                {
+                    int gx = _fx0 + k % _fw;
+                    int gz = _fz0 + k / _fw;
+                    int col = gx + stride * gz;
+                    Color32 c = _mask[col];
+                    if (c.a == 0) continue;
+                    float anchor = ((c.g << 8) | c.b) / DigFoliage.AnchorScale;
+                    int ay = Mathf.Min((int)anchor, ny - 1);
+                    if (ay < _fy0 || ay > _fy1) continue;
+                    int i = (gx - _fr0) + w * ((ay - _fr1) + h * (gz - _fr2));
+                    byte r = DigFoliage.StandsBetween(_mGrid[i], _mGrid[i + w], anchor - ay) ? DigFoliage.Standing : DigFoliage.Removed;
+                    if (c.r == r) continue;
+                    c.r = r;
+                    _mask[col] = c;
+                    _fChanged = true;
+                }
+                _fCol = end;
+                if (_fCol >= _fCount)
+                {
+                    _CheckSurfaceDetails();
+                    if (_fChanged || _sHi >= _sLo) _WriteMask();
+                    _ShowTrees();
+                    _phase = 3;
+                }
                 return;
             }
 
             _Upload();
             _meshing = false;
+        }
+
+        /// <summary>Loads the baked foliage mask (anchors and what the bake left standing) once. False if it can't be read.</summary>
+        private bool _LoadMask()
+        {
+            if (_mask != null) return true;
+            if (!foliageMask.isReadable)
+            {
+                Debug.LogError("[DigHoleIt] The foliage mask of this Dig Zone is not readable. Bake the Dig Zone again.", this);
+                _foliage = false;
+                return false;
+            }
+            _mask = foliageMask.GetPixels32();
+            // Rows above the grid columns hold the surface details.
+            if (_mask == null || _mask.Length < (nx + 1) * (nz + 1) || foliageMask.width != nx + 1)
+            {
+                Debug.LogError("[DigHoleIt] The foliage mask of this Dig Zone does not fit its grid. Bake the Dig Zone again.", this);
+                _mask = null;
+                _foliage = false;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>Writes the meshed chunk's own columns (_fx0.. from _OwnColumns) into the live mask texture.</summary>
+        private void _WriteMask()
+        {
+            if (_maskTex == null)
+            {
+                _maskTex = new Texture2D(foliageMask.width, foliageMask.height, TextureFormat.RGBA32, false, true);
+                _maskTex.filterMode = FilterMode.Point;
+                _maskTex.wrapMode = TextureWrapMode.Clamp;
+                _maskTex.SetPixels32(_mask);
+                // The detail materials are shared assets: give the renderers the live mask instead.
+                MaterialPropertyBlock block = new MaterialPropertyBlock();
+                if (detailRenderers != null)
+                {
+                    for (int i = 0; i < detailRenderers.Length; i++)
+                    {
+                        MeshRenderer r = detailRenderers[i];
+                        if (r == null) continue;
+                        r.GetPropertyBlock(block);
+                        block.SetTexture("_DigFoliageMask", _maskTex);
+                        r.SetPropertyBlock(block);
+                    }
+                }
+            }
+            else
+            {
+                int stride = nx + 1;
+                if (_fChanged)
+                {
+                    Color32[] px = new Color32[_fw * _fd];
+                    for (int lz = 0; lz < _fd; lz++)
+                        for (int lx = 0; lx < _fw; lx++)
+                            px[lx + _fw * lz] = _mask[(_fx0 + lx) + stride * (_fz0 + lz)];
+                    _maskTex.SetPixels32(_fx0, _fz0, _fw, _fd, px);
+                }
+                if (_sHi >= _sLo)
+                {
+                    // The rows holding the changed surface details.
+                    int row0 = _sLo / stride;
+                    int rows = _sHi / stride - row0 + 1;
+                    Color32[] px = new Color32[stride * rows];
+                    System.Array.Copy(_mask, row0 * stride, px, 0, Mathf.Min(px.Length, _mask.Length - row0 * stride));
+                    _maskTex.SetPixels32(0, row0, stride, rows, px);
+                }
+            }
+            _maskDirty = true;
+        }
+
+        /// <summary>
+        /// Checks the surface details (walls, cave ceilings) anchored in the meshed chunk against its samples, like the
+        /// trees, and puts the texels that changed into _sLo.._sHi.
+        /// </summary>
+        private void _CheckSurfaceDetails()
+        {
+            _sLo = 1;
+            _sHi = 0;
+            if (surfaceDetailAnchors == null || surfaceDetailBuckets == null) return;
+            int ci = _meshChunk;
+            if (ci + 1 >= surfaceDetailBuckets.Length) return;
+            int w = _fr3 - _fr0 + 1;
+            int h = _fr4 - _fr1 + 1;
+            int texel0 = (nx + 1) * (nz + 1);
+            int end = Mathf.Min(surfaceDetailBuckets[ci + 1], Mathf.Min(surfaceDetailAnchors.Length, _mask.Length - texel0));
+            for (int k = surfaceDetailBuckets[ci]; k < end; k++)
+            {
+                Vector3 a = surfaceDetailAnchors[k];
+                int x = Mathf.Clamp(Mathf.FloorToInt(a.x), _fr0, _fr3 - 1);
+                int y = Mathf.Clamp(Mathf.FloorToInt(a.y), _fr1, _fr4 - 1);
+                int z = Mathf.Clamp(Mathf.FloorToInt(a.z), _fr2, _fr5 - 1);
+                int i = (x - _fr0) + w * ((y - _fr1) + h * (z - _fr2));
+                byte r = DigFoliage.StandsInCell(_mGrid, i, w, w * h, DigFoliage.Frac(a.x, x), DigFoliage.Frac(a.y, y), DigFoliage.Frac(a.z, z))
+                    ? DigFoliage.Standing : DigFoliage.Removed;
+                Color32 c = _mask[texel0 + k];
+                if (c.r == r) continue;
+                c.r = r;
+                _mask[texel0 + k] = c;
+                if (_sHi < _sLo)
+                {
+                    _sLo = texel0 + k;
+                    _sHi = texel0 + k;
+                }
+                else _sHi = texel0 + k;
+            }
+        }
+
+        /// <summary>Shows the trees anchored in the meshed chunk that still stand and hides the others.</summary>
+        private void _ShowTrees()
+        {
+            if (treeObjects == null || treeAnchors == null || treeBuckets == null) return;
+            int ci = _meshChunk;
+            if (ci + 1 >= treeBuckets.Length) return;
+            int w = _fr3 - _fr0 + 1;
+            int h = _fr4 - _fr1 + 1;
+            int end = Mathf.Min(treeBuckets[ci + 1], Mathf.Min(treeObjects.Length, treeAnchors.Length));
+            for (int t = treeBuckets[ci]; t < end; t++)
+            {
+                GameObject go = treeObjects[t];
+                if (go == null) continue;
+                // The chunk holds the grid cell around the anchor (DigFoliageBaker.AnchorChunk).
+                Vector3 a = treeAnchors[t];
+                int x = Mathf.Clamp(Mathf.FloorToInt(a.x), _fr0, _fr3 - 1);
+                int y = Mathf.Clamp(Mathf.FloorToInt(a.y), _fr1, _fr4 - 1);
+                int z = Mathf.Clamp(Mathf.FloorToInt(a.z), _fr2, _fr5 - 1);
+                int i = (x - _fr0) + w * ((y - _fr1) + h * (z - _fr2));
+                go.SetActive(DigFoliage.StandsInCell(_mGrid, i, w, w * h, DigFoliage.Frac(a.x, x), DigFoliage.Frac(a.y, y), DigFoliage.Frac(a.z, z)));
+            }
         }
 
         /// <summary>Gives chunk <paramref name="ci"/> a GameObject copied from <see cref="chunkTemplate"/>.</summary>

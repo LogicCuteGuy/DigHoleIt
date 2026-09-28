@@ -118,12 +118,87 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 if (!keep) holes[j, i] = previous;
             }
             td.SetHoles(r.x, r.y, holes);
+            GiveBackTrees(data, td, others);
             EditorUtility.SetDirty(td);
 
             data.cutTerrain = null;
             data.cutPrevious = null;
             data.cutRect = default;
             EditorUtility.SetDirty(data);
+        }
+
+        /// <summary>
+        /// Trees a re-bake gave back to the terrain and took again (<paramref name="taken"/>): those the zone had
+        /// before (<paramref name="before"/>) get their height and direction back, so trees on pit or cave floors and
+        /// under ceilings stay there instead of moving to the terrain surface.
+        /// </summary>
+        public static DigTreeInstance[] KeepPlacement(DigTreeInstance[] taken, DigTreeInstance[] before)
+        {
+            if (taken == null || taken.Length == 0 || before == null || before.Length == 0) return taken;
+            var byKey = new Dictionary<(float, float, int, float), Queue<DigTreeInstance>>();
+            foreach (DigTreeInstance t in before)
+            {
+                var key = (t.position.x, t.position.z, t.prototypeIndex, t.rotation);
+                if (!byKey.TryGetValue(key, out Queue<DigTreeInstance> q)) byKey[key] = q = new Queue<DigTreeInstance>();
+                q.Enqueue(t);
+            }
+            for (int i = 0; i < taken.Length; i++)
+            {
+                DigTreeInstance t = taken[i];
+                if (byKey.TryGetValue((t.position.x, t.position.z, t.prototypeIndex, t.rotation), out Queue<DigTreeInstance> q) && q.Count > 0)
+                    taken[i] = q.Dequeue();
+            }
+            return taken;
+        }
+
+        /// <summary>The terrain hole cell a tree position (0..1, like TreeInstance.position) lies in.</summary>
+        public static bool HoleCell(TerrainData td, Vector3 position, out Vector2Int cell)
+        {
+            int res = td.holesResolution;
+            cell = new Vector2Int(Mathf.FloorToInt(position.x * res), Mathf.FloorToInt(position.z * res));
+            return cell.x >= 0 && cell.y >= 0 && cell.x < res && cell.y < res;
+        }
+
+        /// <summary>
+        /// Puts the trees a zone kept while its hole was cut back on the terrain. Trees in cells another zone's hole still
+        /// covers go to that zone instead (the terrain would delete them).
+        /// </summary>
+        private static void GiveBackTrees(DigZoneData data, TerrainData td, List<DigZoneData> others)
+        {
+            DigTreeInstance[] kept = data.terrainTrees;
+            data.terrainTrees = null;
+            if (kept == null || kept.Length == 0) return;
+
+            int prototypes = td.treePrototypes.Length;
+            var trees = new List<TreeInstance>(td.treeInstances);
+            int lost = 0;
+            foreach (DigTreeInstance t in kept)
+            {
+                if (t.prototypeIndex < 0 || t.prototypeIndex >= prototypes)
+                {
+                    lost++;
+                    continue;
+                }
+                DigZoneData owner = null;
+                if (HoleCell(td, t.position, out Vector2Int c))
+                    foreach (DigZoneData o in others)
+                        if (o.cutRect.Contains(c)) { owner = o; break; }
+                if (owner == null)
+                {
+                    // Trees from pit or mound floors land on the terrain again.
+                    TreeInstance back = t.ToTreeInstance();
+                    back.position.y = td.GetInterpolatedHeight(back.position.x, back.position.z) / td.size.y;
+                    trees.Add(back);
+                    continue;
+                }
+                var list = new List<DigTreeInstance>(owner.terrainTrees ?? System.Array.Empty<DigTreeInstance>()) { t };
+                owner.terrainTrees = list.ToArray();
+                EditorUtility.SetDirty(owner);
+                DigFoliageSync.MarkDirty(td);
+            }
+            td.SetTreeInstances(trees.ToArray(), false);
+            if (lost > 0)
+                Debug.LogWarning($"[DigHoleIt] {lost} trees of '{data.name}' use tree prototypes the terrain no longer has; they were dropped.");
         }
 
         /// <summary>Data assets that still hold a hole in <paramref name="td"/> but no zone in the open scenes uses.</summary>

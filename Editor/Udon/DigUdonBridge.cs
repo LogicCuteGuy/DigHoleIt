@@ -21,6 +21,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
         {
             DigZoneBaker.Baked += OnBaked;
             DigZoneBaker.GridChanged += OnGridChanged;
+            DigFoliageBaker.Built += OnFoliageBuilt;
             DigZoneEditor.RuntimeGUI += DrawRuntimeGUI;
             EditorSceneManager.sceneOpened += (scene, mode) => UpgradeRuntimes();
             EditorApplication.delayCall += UpgradeRuntimes;
@@ -116,6 +117,16 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
             if (!DigZoneBaker.Busy) Undo.RecordObject(rt, "Dig Sculpt");
             CopyGrids(rt, zone.data);
             CopyChunkObjects(zone, rt); // sculpting may have given empty chunks an object
+            CopyFoliage(zone, rt);
+            Commit(rt);
+        }
+
+        private static void OnFoliageBuilt(DigZone zone)
+        {
+            DigZoneRuntime rt = zone.GetComponent<DigZoneRuntime>();
+            if (rt == null) return;
+            // Rebuilt from the terrain (derived data, redone after undo), so no undo of its own.
+            CopyFoliage(zone, rt);
             Commit(rt);
         }
 
@@ -137,6 +148,20 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
             rt.editBox = (int[])data.editBox.Clone();
             rt.maxBrushRadius = zone.maxBrushRadius;
             CopyChunkObjects(zone, rt);
+            CopyFoliage(zone, rt);
+        }
+
+        /// <summary>Copies the zone's terrain trees and details (see DigFoliageBaker).</summary>
+        private static void CopyFoliage(DigZone zone, DigZoneRuntime rt)
+        {
+            DigZoneData data = zone.data;
+            rt.foliageMask = data != null ? data.foliageMask : null;
+            rt.detailRenderers = zone.detailRenderers ?? new MeshRenderer[0];
+            rt.treeObjects = zone.treeObjects ?? new GameObject[0];
+            rt.treeAnchors = zone.treeAnchors ?? new Vector3[0];
+            rt.treeBuckets = zone.treeBuckets ?? new int[0];
+            rt.surfaceDetailAnchors = zone.surfaceDetailAnchors ?? new Vector3[0];
+            rt.surfaceDetailBuckets = zone.surfaceDetailBuckets ?? new int[0];
         }
 
         private static void CopyGrids(DigZoneRuntime rt, DigZoneData data)

@@ -38,6 +38,21 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         /// </summary>
         public static bool Busy { get; private set; }
 
+        /// <summary>Runs <paramref name="work"/> as <see cref="Busy"/> (for work that follows undo/redo).</summary>
+        internal static void RunBusy(Action work)
+        {
+            bool wasBusy = Busy;
+            Busy = true;
+            try
+            {
+                work();
+            }
+            finally
+            {
+                Busy = wasBusy;
+            }
+        }
+
         // ---------------------------------------------------------------- Fit
 
         public static void FitToTerrain(DigZone zone)
@@ -70,6 +85,40 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             float top = maxH + zone.headroomAboveTerrain;
             zone.transform.position = new Vector3(p.x, bottom, p.z);
             zone.cells.y = Mathf.Max(4, Mathf.CeilToInt((top - bottom) / v));
+        }
+
+        /// <summary>
+        /// If the terrain rises into the zone's top voxel or above it, raises the top so it has Headroom Above Terrain over
+        /// the highest terrain point, the way Fit To Terrain would. The bottom stays, so the zone keeps its voxel lattice
+        /// and its sculpting. Returns true if the zone grew.
+        /// </summary>
+        public static bool GrowToTerrain(DigZone zone)
+        {
+            Terrain t = zone.terrain;
+            if (t == null || t.terrainData == null) return false;
+            TerrainData td = t.terrainData;
+            Vector3 tp = t.transform.position;
+            Vector3 o = zone.transform.position;
+            float v = zone.voxelSize;
+
+            // The columns SampleGrid reads.
+            float maxH = float.MinValue;
+            for (int z = 0; z <= zone.cells.z; z++)
+            for (int x = 0; x <= zone.cells.x; x++)
+            {
+                float u = Mathf.Clamp01((o.x + x * v - tp.x) / td.size.x);
+                float w = Mathf.Clamp01((o.z + z * v - tp.z) / td.size.z);
+                maxH = Mathf.Max(maxH, td.GetInterpolatedHeight(u, w) + tp.y);
+            }
+            if (maxH < o.y + (zone.cells.y - 1) * v) return false;
+
+            // At least one whole voxel of air over the highest point, even with a tiny headroom.
+            int cellsY = Mathf.Max(Mathf.CeilToInt((maxH + zone.headroomAboveTerrain - o.y) / v), Mathf.FloorToInt((maxH - o.y) / v) + 2);
+            if (cellsY <= zone.cells.y) return false;
+            Undo.RecordObject(zone, "Bake Dig Zone");
+            Debug.Log($"[DigHoleIt] The terrain rises above the top of '{zone.name}': raised the zone from {zone.cells.y} to {cellsY} cells high.", zone);
+            zone.cells.y = cellsY;
+            return true;
         }
 
         // ---------------------------------------------------------------- Sculpt bookkeeping
@@ -119,6 +168,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         /// </param>
         public static bool Bake(DigZone zone, bool keepSculpt)
         {
+            GrowToTerrain(zone);
             if (!Validate(zone, out string error))
             {
                 Debug.LogError("[DigHoleIt] " + error, zone);
@@ -156,6 +206,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 DigZoneData data = EnsureData(zone);
                 Undo.RegisterCompleteObjectUndo(data, "Bake Dig Zone");
 
+                // Filling the hole gives the zone's trees back to the terrain, onto its surface; cutting it again takes
+                // them back. Those still in the hole return to where the zone had them.
+                DigTreeInstance[] keptTrees = data.terrainTrees;
                 RestoreTerrainCut(data);
                 OldGrid old = keepSculpt && data.HasGrid && CanKeepSculpt(zone, out _) ? new OldGrid(data, zone) : null;
 
@@ -179,6 +232,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
                 EditorUtility.DisplayProgressBar("DigHoleIt", "Cutting terrain hole", 0.35f);
                 CutTerrain(data, td, holeCells);
+                data.terrainTrees = DigTerrainHoles.KeepPlacement(data.terrainTrees, keptTrees);
 
                 EditorUtility.DisplayProgressBar("DigHoleIt", "Baking textures", 0.45f);
                 BakeControl(zone, data, td);
@@ -188,6 +242,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
                 EditorUtility.DisplayProgressBar("DigHoleIt", "Meshing chunks", 0.6f);
                 BuildChunks(zone, data);
+
+                EditorUtility.DisplayProgressBar("DigHoleIt", "Trees and details", 0.95f);
+                DigFoliageBaker.Build(zone, true);
 
                 EditorUtility.SetDirty(data);
                 EditorUtility.SetDirty(zone);
@@ -310,7 +367,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         {
             byte[] grid = SampleGrid(zone, data.nx, data.ny, data.nz, out minH, out maxH, out int clipped);
             if (clipped > 0)
-                Debug.LogWarning($"[DigHoleIt] Terrain leaves the zone's vertical range at {clipped} columns. Use Fit To Terrain.", zone);
+                Debug.LogWarning($"[DigHoleIt] The terrain reaches the floor of '{zone.name}' at {clipped} columns. Move the zone down or use Fit To Terrain.", zone);
 
             data.baseGrid = grid;
             data.grid = (byte[])grid.Clone();
@@ -534,6 +591,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                         }
 
                         byte[] grid = data.grid;
+                        byte[] before = DigFoliageBaker.HasFoliage(zone) ? (byte[])grid.Clone() : null;
                         for (int i = 0; i < grid.Length; i++)
                             if (grid[i] == old[i]) grid[i] = fresh[i];
                         data.baseGrid = fresh;
@@ -541,6 +599,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                         DigSculptUndo.MarkSeen(data);
                         BakeHeight(zone, data, minH, maxH);
                         RemeshAll(zone);
+                        // Trees and details stand on the new heights.
+                        DigFoliageBaker.FollowHeights(zone, before);
+                        DigFoliageBaker.Build(zone);
                         changed = true;
                     }
                 }
@@ -597,6 +658,23 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         private static void CutTerrain(DigZoneData data, TerrainData td, RectInt cells)
         {
             Undo.RegisterCompleteObjectUndo(td, "Cut Terrain Hole");
+
+            // The terrain deletes the trees in its holes: the zone keeps them (and shows them, see DigFoliageBaker)
+            // until the hole is filled again.
+            var kept = new List<DigTreeInstance>();
+            if (td.treeInstanceCount > 0)
+            {
+                TreeInstance[] all = td.treeInstances;
+                var rest = new List<TreeInstance>(all.Length);
+                foreach (TreeInstance t in all)
+                {
+                    if (DigTerrainHoles.HoleCell(td, t.position, out Vector2Int c) && cells.Contains(c)) kept.Add(new DigTreeInstance(t));
+                    else rest.Add(t);
+                }
+                if (kept.Count > 0) td.SetTreeInstances(rest.ToArray(), false);
+            }
+            data.terrainTrees = kept.ToArray();
+
             bool[,] holes = td.GetHoles(cells.x, cells.y, cells.width, cells.height);
             var previous = new bool[cells.width * cells.height];
             for (int j = 0; j < cells.height; j++)
@@ -637,6 +715,8 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 copy.cutTerrain = null;
                 copy.cutPrevious = null;
                 copy.cutRect = default;
+                copy.terrainTrees = null;
+                copy.surfaceDetails = null;
                 EditorUtility.SetDirty(copy);
 
                 Undo.RecordObject(zone, "Bake Dig Zone");
@@ -864,7 +944,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             string path = AssetDatabase.GetAssetPath(data);
             if (!string.IsNullOrEmpty(path))
                 foreach (UnityEngine.Object o in AssetDatabase.LoadAllAssetRepresentationsAtPath(path))
-                    if (o is Mesh m) pool.Add(m);
+                    if (o is Mesh m && (data.detailMeshes == null || Array.IndexOf(data.detailMeshes, m) < 0)) pool.Add(m);
             data.chunkMeshes = new Mesh[count];
 
             // Runtime copies of the template are lit by light probes, so it is never lightmapped.
@@ -1211,6 +1291,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             for (int cy = cy0; cy <= cy1; cy++)
             for (int cx = cx0; cx <= cx1; cx++)
                 RebuildChunk(zone, data, mesher, cx, cy, cz);
+            DigFoliageBaker.UpdateMask(zone, changed);
         }
 
         public static void RemeshAll(DigZone zone)
@@ -1218,6 +1299,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             DigZoneData data = zone.data;
             if (data == null) return;
             RemeshRange(zone, new[] { 0, 0, 0, data.nx, data.ny, data.nz });
+            if (data.HasGrid) DigSculptUndo.MarkSeen(data);
         }
 
         /// <summary>Removes chunk objects and restores the terrain. The data asset is kept.</summary>
@@ -1225,7 +1307,15 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         {
             if (zone.data != null) RestoreTerrainCut(zone.data);
             if (zone.chunkRoot != null) Undo.DestroyObjectImmediate(zone.chunkRoot.gameObject);
+            if (zone.foliageRoot != null) Undo.DestroyObjectImmediate(zone.foliageRoot.gameObject);
             Undo.RecordObject(zone, "Clear Dig Zone");
+            zone.foliageRoot = null;
+            zone.treeObjects = null;
+            zone.treeAnchors = null;
+            zone.treeBuckets = null;
+            zone.surfaceDetailAnchors = null;
+            zone.surfaceDetailBuckets = null;
+            zone.detailRenderers = null;
             zone.chunkRoot = null;
             zone.chunkTemplate = null;
             zone.chunkIds = null;

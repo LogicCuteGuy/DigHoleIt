@@ -5,7 +5,7 @@ DigHoleIt turns part of a Unity Terrain into diggable voxel terrain. You place a
 | Page | What it covers |
 |---|---|
 | [Getting started](getting-started.md) | Installing the package, the demo scenes, and setting up a zone on your own terrain |
-| [Dig Zones](dig-zones.md) | Zone settings, baking, moving and resizing, terrain holes, following terrain edits, terrain layers and baked lighting |
+| [Dig Zones](dig-zones.md) | Zone settings, baking, zone height, trees and details, moving and resizing, terrain holes, following terrain edits, terrain layers and baked lighting |
 | [Editor brushes](editor-brushes.md) | Sculpting and painting zones in the editor |
 | [VRChat runtime](vrchat-runtime.md) | `DigZoneRuntime`, `DigTool` and `DigSync` (UdonSharp) |
 | [Standalone runtime](standalone-runtime.md) | `DigZoneRuntimeStandalone` and `DigToolStandalone` (plain C#), with saves and multiplayer |
@@ -27,12 +27,12 @@ The authoring side (`DigZone`, the baker, the brushes) and the shared mesher and
 
 ```
 Runtime/Core        DigZone (authoring, editor only in builds), DigZoneData, ChunkMesher, DigChunkPacker, DigRleEncoder
-Runtime/Shared      DigBrush, DigFormat, DigRle, SurfaceNets: compiled into both Udon and C#
+Runtime/Shared      DigBrush, DigFormat, DigFoliage, DigRle, SurfaceNets: compiled into both Udon and C#
 Runtime/Udon        DigZoneRuntime, DigTool, DigSync (VRChat only)
 Runtime/Standalone  DigZoneRuntimeStandalone, DigToolStandalone (non-VRChat only)
-Editor              Baker, inspectors, handles, brushes, terrain tools, terrain sync
+Editor              Baker, trees and details (DigFoliageBaker, DigFoliageSync), inspectors, handles, brushes, terrain tools, terrain sync
 Editor/Udon         Bridge that copies baked data into the Udon runtime, Udon inspectors, VRChat demo builder
-Shaders             DigHoleIt/DigTerrain (Standard) and DigHoleIt/DigTerrain Lite (Quest)
+Shaders             DigHoleIt/DigTerrain (Standard), DigHoleIt/DigTerrain Lite (Quest), DigHoleIt/DigDetail (terrain details in zones)
 Tests/Editor        EditMode tests
 ```
 

@@ -14,7 +14,7 @@ Pick one:
 
 - **Git URL:** *Window > Package Manager > + > Add package from git URL* and enter
   `https://github.com/LogicCuteGuy/DigHoleIt.git`.
-  Add `#v0.4.0` (or another tag) to the end to pin a version.
+  Add `#v0.5.0` (or another tag) to the end to pin a version.
 - **Embedded:** clone or copy the repository into your project's `Packages/com.logiccuteguy.digholeit` folder.
 
 In a VRChat project, install LCGUdonSharp first. The Udon runtime does not compile without it.

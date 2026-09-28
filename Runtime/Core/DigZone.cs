@@ -45,6 +45,16 @@ namespace LogicCuteGuy.DigHoleIt
                  "size as the terrain), but at least 16 texels across a chunk so chunk edges don't show. Raise it for sharper " +
                  "baked shadows in dug areas, lower it to save lightmap space.")]
         [Min(0.01f)] public float lightmapScale = 1f;
+
+        [Header("Terrain Trees And Details")]
+        [Tooltip("Show the terrain's trees inside the zone as copies of their prefabs. The terrain deletes trees in its hole, so the " +
+                 "zone keeps them and gives them back when the hole is filled. Digging the ground away under a tree or burying it " +
+                 "removes the tree. Paint them with DigHoleIt: Paint Trees.")]
+        public bool trees = true;
+        [Tooltip("Show the terrain's details (grass, flowers, detail meshes) inside the zone, where the terrain hole hides them. " +
+                 "Digging the ground away under them or burying them removes them. Paint them with DigHoleIt: Paint Details.")]
+        public bool details = true;
+
         public DigZoneData data;
 
         [HideInInspector] public Transform chunkRoot;
@@ -56,6 +66,24 @@ namespace LogicCuteGuy.DigHoleIt
         [HideInInspector] public MeshCollider[] chunkColliders;
         [Tooltip("Inactive chunk object that runtimes copy when digging or adding soil gives an empty chunk a surface.")]
         [HideInInspector] public GameObject chunkTemplate;
+
+        // Terrain trees and details inside the zone (see DigFoliage), rebuilt by the editor whenever they change.
+        [HideInInspector] public Transform foliageRoot;
+        [HideInInspector] public GameObject[] treeObjects;
+        /// <summary>Grid position each tree stands on (see <see cref="DigFoliage"/>).</summary>
+        [HideInInspector] public Vector3[] treeAnchors;
+        /// <summary>
+        /// Trees sorted by the chunk that holds their anchor (DigFoliageBaker.AnchorChunk): the trees of chunk ci are
+        /// treeObjects[treeBuckets[ci]] .. treeObjects[treeBuckets[ci + 1] - 1].
+        /// </summary>
+        [HideInInspector] public int[] treeBuckets;
+        [HideInInspector] public MeshRenderer[] detailRenderers;
+        /// <summary>
+        /// Grid position of each surface detail (<see cref="DigZoneData.surfaceDetails"/>), sorted by the chunk holding it
+        /// like the trees (<see cref="surfaceDetailBuckets"/>). Detail k has foliage mask texel (nx + 1) * (nz + 1) + k.
+        /// </summary>
+        [HideInInspector] public Vector3[] surfaceDetailAnchors;
+        [HideInInspector] public int[] surfaceDetailBuckets;
 
         [NonSerialized] private int[] _slots;
         [NonSerialized] private int[] _slotsIds;

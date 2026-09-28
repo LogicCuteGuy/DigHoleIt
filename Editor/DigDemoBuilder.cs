@@ -45,6 +45,8 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
             var td = new TerrainData { heightmapResolution = 257, alphamapResolution = 128 };
             td.size = new Vector3(96f, 24f, 96f);
+            // A TerrainData made by script has no detail map (resolution 0), so no tool could paint details on it.
+            td.SetDetailResolution(512, 32);
             int res = td.heightmapResolution;
             var heights = new float[res, res];
             for (int y = 0; y < res; y++)

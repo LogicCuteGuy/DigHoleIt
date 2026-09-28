@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 namespace LogicCuteGuy.DigHoleIt.Editor
@@ -20,6 +21,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         private static readonly Dictionary<TerrainData, RectInt> Textures = new Dictionary<TerrainData, RectInt>();
         private static readonly HashSet<TerrainData> UnsyncedHeights = new HashSet<TerrainData>();
         private static readonly HashSet<TerrainData> UnsyncedTextures = new HashSet<TerrainData>();
+        // Hash of the terrain heights and layer blend under each zone as it was last synced, so undo and redo re-sync
+        // only the zones whose terrain they changed (re-sampling a large zone takes a second or more).
+        private static readonly Dictionary<DigZone, (int heights, int textures)> Seen = new Dictionary<DigZone, (int, int)>();
         private static double _due;
         private static bool _scheduled;
 
@@ -35,6 +39,16 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             TerrainCallbacks.heightmapChanged += OnHeightmapChanged;
             TerrainCallbacks.textureChanged += OnTextureChanged;
             Undo.undoRedoPerformed += OnUndoRedo;
+            EditorApplication.delayCall += SeeAll;
+            EditorSceneManager.sceneOpened += (scene, mode) => SeeAll();
+        }
+
+        /// <summary>Remembers the terrain under zones not seen yet (as they are loaded, they match it).</summary>
+        private static void SeeAll()
+        {
+            foreach (DigZone zone in Object.FindObjectsByType<DigZone>(FindObjectsSortMode.None))
+                if (!Seen.ContainsKey(zone) && TryHash(zone, out int h, out int t))
+                    Seen[zone] = (h, t);
         }
 
         private static bool Ignore => !Enabled || DigZoneBaker.Busy || EditorApplication.isPlayingOrWillChangePlaymode;
@@ -62,17 +76,60 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
         private static void OnUndoRedo()
         {
-            // An undone terrain stroke raises no reliable callback; check every zone (unchanged ones are skipped).
+            // An undone terrain stroke raises no reliable callback: re-sync the zones whose terrain changed.
             if (Ignore) return;
+            var all = new RectInt(0, 0, int.MaxValue / 2, int.MaxValue / 2);
+            bool any = false;
             foreach (DigZone zone in Object.FindObjectsByType<DigZone>(FindObjectsSortMode.None))
             {
-                TerrainData td = zone.terrain != null ? zone.terrain.terrainData : null;
-                if (td == null) continue;
-                var all = new RectInt(0, 0, int.MaxValue / 2, int.MaxValue / 2);
-                Add(Heights, td, all);
-                Add(Textures, td, all);
+                if (!TryHash(zone, out int h, out int t)) continue;
+                TerrainData td = zone.terrain.terrainData;
+                bool known = Seen.TryGetValue(zone, out (int heights, int textures) s);
+                Seen[zone] = (h, t);
+                if (!known || s.heights != h)
+                {
+                    Add(Heights, td, all);
+                    any = true;
+                }
+                if (!known || s.textures != t)
+                {
+                    Add(Textures, td, all);
+                    any = true;
+                }
             }
-            if (Heights.Count > 0) Schedule();
+            if (any) Schedule();
+        }
+
+        /// <summary>Hash of the terrain heights and layer blend under the zone.</summary>
+        private static bool TryHash(DigZone zone, out int heights, out int textures)
+        {
+            heights = textures = 0;
+            if (zone == null || zone.terrain == null || zone.terrain.terrainData == null) return false;
+            TerrainData td = zone.terrain.terrainData;
+            unchecked
+            {
+                int h = 17;
+                if (Region(zone, td, td.heightmapResolution, out RectInt r))
+                    foreach (float v in td.GetHeights(r.x, r.y, r.width, r.height)) h = h * 31 + v.GetHashCode();
+                heights = h;
+                int t = 17;
+                if (td.alphamapLayers > 0 && Region(zone, td, td.alphamapResolution, out r))
+                    foreach (float v in td.GetAlphamaps(r.x, r.y, r.width, r.height)) t = t * 31 + v.GetHashCode();
+                textures = t;
+            }
+            return true;
+        }
+
+        /// <summary>The part of a terrain map (<paramref name="res"/> texels per side) under the zone, padded as in Overlaps.</summary>
+        private static bool Region(DigZone zone, TerrainData td, int res, out RectInt r)
+        {
+            Vector3 tp = zone.terrain.transform.position;
+            Bounds b = zone.WorldBounds;
+            float sx = (res - 1) / td.size.x, sz = (res - 1) / td.size.z;
+            int x0 = Mathf.Max(0, Mathf.FloorToInt((b.min.x - tp.x) * sx) - 2), x1 = Mathf.Min(res - 1, Mathf.CeilToInt((b.max.x - tp.x) * sx) + 2);
+            int z0 = Mathf.Max(0, Mathf.FloorToInt((b.min.z - tp.z) * sz) - 2), z1 = Mathf.Min(res - 1, Mathf.CeilToInt((b.max.z - tp.z) * sz) + 2);
+            r = new RectInt(x0, z0, x1 - x0 + 1, z1 - z0 + 1);
+            return x1 >= x0 && z1 >= z0;
         }
 
         private static void Add(Dictionary<TerrainData, RectInt> map, TerrainData td, RectInt region)
@@ -122,6 +179,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 bool h = heights.TryGetValue(td, out RectInt hr) && Overlaps(zone, td, hr, td.heightmapResolution);
                 bool t = textures.TryGetValue(td, out RectInt tr) && Overlaps(zone, td, tr, td.alphamapResolution);
                 if (!h && !t) continue;
+                if (TryHash(zone, out int hh, out int th)) Seen[zone] = (hh, th);
                 if (!DigZoneBaker.IsUpToDate(zone)) continue;
                 if (DigZoneBaker.SyncWithTerrain(zone, h, t)) synced++;
             }

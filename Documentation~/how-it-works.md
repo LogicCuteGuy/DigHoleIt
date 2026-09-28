@@ -56,6 +56,18 @@ Dig is `max(d, -sphere)` and Add is `min(d, sphere)`. Paint sets the layer insid
 
 Chunk objects are marked Contribute GI, Reflection Probe Static and Occludee Static when the zone's Baked Lighting is on (never Batching Static, since their meshes change, or Occluder Static, since digging opens views through the ground), and their meshes get lightmap UVs. Runtimes switch a chunk to light probes (`lightmapIndex = -1`) when they replace its mesh, and restore the baked lightmap index and scale/offset on reset. Chunks created at runtime are copies of the Chunk Template, which is never lightmapped.
 
+## Trees and details
+
+A terrain draws no trees or details in its holes and deletes the trees there, so zones handle both (`DigFoliageBaker`):
+
+- When a zone cuts its hole it moves the terrain's trees inside it into `DigZoneData.terrainTrees` and gives them back when the hole is filled (`DigTerrainHoles`). Each kept tree gets a copy of its prefab.
+- Detail instances come from `TerrainData.ComputeDetailInstanceTransforms` on a hole-free copy of the terrain's detail layers, so they land where the terrain would put them. They are merged into one mesh per chunk column, drawn with `DigHoleIt/DigDetail`.
+- Everything has an anchor: details the top surface of their grid column when they were built, trees the point they stand on. Something stands while the SDF at its anchor (interpolated between the two samples around it for details, trilinear over the grid cell around it for trees, so they can stand on walls) is within `DigFoliage.Tolerance` (24/64 voxel) of zero, so it goes when the surface under it is dug away or built over.
+- The foliage mask (`DigFoliage`, one RGBA32 texel per grid column) holds each column's anchor (g, b) and whether its details stand (r). Surface details (`DigZoneData.surfaceDetails`: walls, cave ceilings) get one texel each in rows above the columns, and their anchors are points like the trees' (`DigZone.surfaceDetailAnchors`, sorted by chunk in `surfaceDetailBuckets`). Every detail vertex carries its instance root (uv3) and its column's mask texel (uv2), and the shader collapses instances whose column has r = 0. Trees are switched off.
+- Each anchor is checked by one chunk: for details the one holding its column and the sample below it, for trees the one holding the grid cell around it (`DigFoliageBaker.AnchorChunk`). After meshing a chunk, the VRChat runtime checks the details and trees it holds from its own samples (a few columns per step, inside the frame budget). Trees are sorted by that chunk (`treeBuckets`).
+
+`DigFoliageSync` rebuilds a zone's trees and details when the terrain's trees, details or prototypes change (`ObjectChangeEvents`) or after undo, if their hash (`DigZoneData.foliageSignature`) changed. When only the trees changed (`foliageDetailSignature` still matches), only the trees are rebuilt.
+
 ## Udon frame budget
 
 Queued edits and meshing share `budgetMsDesktop` (2.5 ms) or `budgetMsMobile` (1.2 ms) per frame. The chunk nearest the player is meshed first.
@@ -75,5 +87,8 @@ Queued edits and meshing share `budgetMsDesktop` (2.5 ms) or `budgetMsMobile` (1
 ## Editor side
 
 - `DigZoneBaker` bakes zones and raises `Baked` and `GridChanged`. It creates chunk objects only for chunks with a surface, plus an inactive Chunk Template that runtimes copy when a chunk gains one; sculpting in the editor adds objects the same way. In VRChat projects, `DigUdonBridge` listens and copies the per-chunk data into the zone's `DigZoneRuntime`, if it has one. `DigZoneEditor.RuntimeGUI` is where the runtimes draw their Add/Remove buttons.
-- `DigTerrainSync` listens to `TerrainCallbacks.heightmapChanged` and `textureChanged` and calls `DigZoneBaker.SyncWithTerrain` once a stroke ends.
-- `DigTerrainHoles` records which terrain cells each zone cut, and fills them back in when zones are deleted.
+- `DigTerrainSync` listens to `TerrainCallbacks.heightmapChanged` and `textureChanged` and calls `DigZoneBaker.SyncWithTerrain` once a stroke ends. After undo or redo it re-syncs only zones whose terrain heights or layer blend under them changed (it keeps a hash of both).
+- Undo and redo deserialize the whole `DigZoneData`. Grids whose encoding didn't change keep their decoded arrays (unless they were changed in place since they were encoded). `DigSculptUndo` compares the new arrays with the ones the meshes were made from and remeshes only the chunks around the difference; `DigZoneData.AdoptUndo` keeps the VRChat runtime's per-chunk streams, so only those chunks are encoded again.
+- `DigTerrainHoles` records which terrain cells each zone cut, and fills them back in when zones are deleted, together with the trees the zone kept. A re-bake gives the trees back and takes them again; `KeepPlacement` puts back each one's height and direction (`DigTreeInstance.up`).
+- A bake raises the zone's top when the terrain reaches it (`DigZoneBaker.GrowToTerrain`).
+- `DigTerrainTreeTool` and `DigTerrainDetailTool` wrap Unity's Paint Trees and Paint Details tools: where the mouse ray hits a zone's voxel surface before the terrain, they paint there (details through Unity's tool at that terrain spot, trees into the zone's list). The tree brush scatters on the plane of the surface under the mouse and drops each tree onto the voxel surface along its normal (`DigGridUtil.Raycast`); the detail tool snapshots the detail layers under the brush and puts back cells whose surface is further than the brush radius from the mouse in height.
