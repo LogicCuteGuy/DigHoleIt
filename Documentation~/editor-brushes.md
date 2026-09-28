@@ -5,6 +5,8 @@ There are two ways to sculpt and paint a baked zone in the editor. Both use the 
 - **From the Terrain:** Terrain component > Paint Terrain > **DigHoleIt: Dig Voxels** (Dig, Add, Smooth, Reset) or **DigHoleIt: Paint Voxels**. The brush shape comes from Unity's terrain brush list. The brush works on every baked zone that uses the terrain.
 - **From the zone:** select the Dig Zone and click **Sculpt Tool**. An overlay in the Scene view has the modes (Dig, Add, Paint, Smooth, Reset), the paint layer, and the shape (Sphere, Soft, Flat or a custom mask texture).
 
+<img src="images/terrain-dig-voxels.png" alt="The DigHoleIt: Dig Voxels terrain tool in the Terrain inspector, in Add mode with the Grass layer as the added soil texture" width="390">
+
 ## Modes
 
 | Mode | What it does |

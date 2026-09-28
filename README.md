@@ -32,6 +32,10 @@ Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRCha
 
 ![The Dig Sculpt tool and the DigHoleIt Brush overlay in the Scene view](Documentation~/images/editor-sculpt.jpg)
 
+**From the Terrain.** The same brushes as a terrain tool, **DigHoleIt: Dig Voxels**, in the terrain's Paint Terrain list (here in Add mode, adding soil textured with the Grass layer):
+
+<img src="Documentation~/images/terrain-dig-voxels.png" alt="The DigHoleIt: Dig Voxels terrain tool in the Terrain inspector: its zone list, the Dig / Add / Smooth / Reset modes, the added soil texture, size, strength, brush axis and Unity's brush list" width="390">
+
 ## Requirements
 
 | | VRChat world | Standalone game |
