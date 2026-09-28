@@ -116,7 +116,7 @@ Shader "DigHoleIt/DigTerrain"
         _DugOcclusion ("Darkening Below Surface", Range(0, 1)) = 0.5
         _DugOcclusionDepth ("Darkening Depth (m)", Float) = 4
         _TriplanarSharpness ("Triplanar Sharpness", Range(1, 16)) = 6
-        _HoleMargin ("Hole Overlap (m)", Float) = 0.03
+        _HoleMargin ("Hole Overlap (m)", Float) = 0.1
 
         [Header(Baked Zone Data)]
         [NoScaleOffset] _Control ("Control (layers 0-3)", 2D) = "red" {}

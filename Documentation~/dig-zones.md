@@ -85,7 +85,7 @@ Lights set to **Baked** don't light moving or changed objects directly, only thr
 2. Click **Add Light Probes** before baking lighting. A chunk that is dug at runtime can't keep its lightmap (its mesh changed), so it switches to light probes; **Reset** gives it its lightmap back.
 3. Dug areas get darker with depth below the original surface (**Darkening Below Surface** and **Darkening Depth** on the material), because the probes sit above the ground and would light a cave like the surface.
 
-Chunk meshes end exactly at the terrain hole edge, so they don't overlap the terrain in the lightmapper. Starting a lighting bake re-applies each zone's lighting settings (static flags, lightmap UVs, Scale In Lightmap), so changing the terrain's Scale In Lightmap only needs a new lighting bake.
+Chunk meshes end just past the terrain hole edge, by the zone material's **Hole Overlap** (0.1 m by default): enough to close the seam, too little to shadow the terrain in the lightmapper. Starting a lighting bake re-applies each zone's lighting settings (static flags, lightmap UVs, Scale In Lightmap), so changing the terrain's Scale In Lightmap only needs a new lighting bake.
 
 Sculpting in the editor changes the chunk meshes, so bake lighting again after sculpting. Turn Baked Lighting off for zones that should only use light probes; that also skips the lightmap UVs, which make a big zone's bake slower (about 6 ms per chunk).
 

@@ -9,7 +9,8 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 {
     /// <summary>
     /// Remeshes zones whose grid was changed by undo/redo: only the chunks around the samples that differ from the grid
-    /// the meshes were made from.
+    /// the meshes were made from. All of them when undo/redo swapped the chunk objects (a bake or resize undone or
+    /// redone): chunk meshes are reused by later bakes and hold none of the undone state.
     /// </summary>
     [InitializeOnLoad]
     internal static class DigSculptUndo
@@ -23,6 +24,8 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         }
 
         private static readonly Dictionary<DigZoneData, State> Seen = new Dictionary<DigZoneData, State>();
+        /// <summary>The chunk objects and meshes each zone's meshes were last written to (see <see cref="ChunkSignature"/>).</summary>
+        private static readonly Dictionary<DigZone, int> SeenChunks = new Dictionary<DigZone, int>();
 
         static DigSculptUndo()
         {
@@ -34,12 +37,40 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         public static void MarkSeen(DigZoneData data) =>
             Seen[data] = new State { Version = data.gridVersion, Grid = data.grid, Paint = data.paint };
 
+        /// <summary>Call after the zone's chunk objects or their meshes changed, once the meshes are written.</summary>
+        public static void MarkChunksSeen(DigZone zone)
+        {
+            if (zone != null) SeenChunks[zone] = ChunkSignature(zone);
+        }
+
+        /// <summary>Hash of the zone's chunk slots: which object and mesh each one has.</summary>
+        private static int ChunkSignature(DigZone zone)
+        {
+            unchecked
+            {
+                int h = 17;
+                if (zone.chunkIds != null)
+                    foreach (int id in zone.chunkIds) h = h * 31 + id;
+                if (zone.chunkFilters != null)
+                    foreach (MeshFilter f in zone.chunkFilters)
+                    {
+                        Mesh m = f != null ? f.sharedMesh : null;
+                        h = h * 31 + (f != null ? f.GetInstanceID() : 0);
+                        h = h * 31 + (m != null ? m.GetInstanceID() : 0);
+                    }
+                return h;
+            }
+        }
+
         /// <summary>Zones not seen yet: their meshes match the grid they were loaded with.</summary>
         private static void SeeAll()
         {
             foreach (DigZone zone in Object.FindObjectsByType<DigZone>(FindObjectsSortMode.None))
+            {
                 if (zone.data != null && zone.data.HasGrid && !Seen.ContainsKey(zone.data))
                     MarkSeen(zone.data);
+                if (!SeenChunks.ContainsKey(zone)) MarkChunksSeen(zone);
+            }
         }
 
         private static void OnUndoRedo()
@@ -49,14 +80,16 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 DigZoneData data = zone.data;
                 if (data == null || !data.HasGrid) continue;
                 bool known = Seen.TryGetValue(data, out State s);
+                // Other chunk objects, or other meshes in them, than the ones last written.
+                bool swapped = SeenChunks.TryGetValue(zone, out int chunks) && chunks != ChunkSignature(zone);
                 // Same arrays: edits in place remesh as they go.
-                if (known && ReferenceEquals(s.Grid, data.grid) && ReferenceEquals(s.Paint, data.paint))
+                if (!swapped && known && ReferenceEquals(s.Grid, data.grid) && ReferenceEquals(s.Paint, data.paint))
                 {
                     MarkSeen(data);
                     continue;
                 }
 
-                int[] box = known ? Difference(s, data) : null;
+                int[] box = known && !swapped ? Difference(s, data) : null;
                 if (box != null && box[0] > box[3])
                 {
                     // Same samples in new arrays (undo of something else in the asset).
@@ -76,6 +109,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                         DigZoneBaker.RemeshRange(zone, box);
                     }
                     MarkSeen(data);
+                    MarkChunksSeen(zone);
                     DigZoneBaker.NotifyGridChanged(zone);
                 });
             }

@@ -191,6 +191,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 TerrainData td = terrain.terrainData;
 
                 Undo.RecordObject(zone.transform, "Bake Dig Zone");
+                // The zone lists its chunk objects: undo must put the list back with the objects it destroys and restores.
+                // A whole snapshot: property-level records of arrays that change size come back scrambled on redo.
+                Undo.RegisterCompleteObjectUndo(zone, "Bake Dig Zone");
                 zone.transform.rotation = Quaternion.identity;
                 zone.transform.localScale = Vector3.one;
 
@@ -245,6 +248,10 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
                 EditorUtility.DisplayProgressBar("DigHoleIt", "Trees and details", 0.95f);
                 DigFoliageBaker.Build(zone, true);
+
+                // Redo restores the zone's first record before it re-creates the chunk and foliage objects, so the zone's
+                // references to them would be left dangling. This last record is restored after them and puts them back.
+                Undo.RegisterCompleteObjectUndo(zone, "Bake Dig Zone");
 
                 EditorUtility.SetDirty(data);
                 EditorUtility.SetDirty(zone);
@@ -858,6 +865,10 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             ApplyMaterial(zone, data, zone.material);
         }
 
+        /// <summary>Default Hole Overlap of the zone material (metres the zone's surface runs on under the terrain edge).</summary>
+        private const float HoleMargin = 0.1f;
+        private const float OldHoleMargin = 0.03f;
+
         /// <summary>Copies the terrain layers and the zone's baked shading data onto <paramref name="mat"/>.</summary>
         public static void ApplyMaterial(DigZone zone, DigZoneData data, Material mat) => ApplyMaterial(zone, data, mat, true);
 
@@ -865,6 +876,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         {
             if (mat == null || data == null) return;
             if (recordUndo) Undo.RecordObject(mat, "Apply Dig Zone Material");
+            // The old default overlap of 0.03 m leaves cracks where the terrain lowers its detail with distance.
+            if (mat.HasProperty("_HoleMargin") && Mathf.Approximately(mat.GetFloat("_HoleMargin"), OldHoleMargin))
+                mat.SetFloat("_HoleMargin", HoleMargin);
 
             Terrain t = zone.terrain;
             TerrainLayer[] layers = t != null && t.terrainData != null ? t.terrainData.terrainLayers : Array.Empty<TerrainLayer>();
@@ -877,6 +891,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 else mat.DisableKeyword(k);
             }
 
+            bool remap = UsesDiffuseRemap(t);
             for (int i = 0; i < DigFormat.MaxTerrainLayers; i++)
             {
                 if (!mat.HasProperty("_Splat" + i)) continue;
@@ -893,7 +908,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                     bool alphaSmooth = l.diffuseTexture != null && GraphicsFormatUtility.HasAlphaChannel(l.diffuseTexture.graphicsFormat);
                     mat.SetFloat("_Smoothness" + n, alphaSmooth ? 1f : l.smoothness);
                     mat.SetFloat("_NormalScale" + n, l.normalScale);
-                    mat.SetColor("_Tint" + n, (Color)l.diffuseRemapMax);
+                    mat.SetColor("_Tint" + n, remap ? (Color)l.diffuseRemapMax : Color.white);
                 }
                 else
                 {
@@ -1003,6 +1018,19 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             zone.chunkFilters = filters.ToArray();
             zone.chunkRenderers = renderers.ToArray();
             zone.chunkColliders = colliders.ToArray();
+            DigSculptUndo.MarkChunksSeen(zone);
+        }
+
+        /// <summary>
+        /// Whether the terrain's material tints its layers with their Diffuse Remap colour. The render pipeline terrain
+        /// shaders do; the built-in ones (Nature/Terrain/...) ignore it, so the zone must too or its hole shows a seam.
+        /// </summary>
+        private static bool UsesDiffuseRemap(Terrain t)
+        {
+            Material m = t != null ? t.materialTemplate : null;
+            if (m == null || m.shader == null) return false;
+            string name = m.shader.name;
+            return !name.StartsWith("Nature/Terrain/") && (m.HasProperty("_DiffuseRemapScale0") || name.Contains("Render Pipeline") || name.StartsWith("HDRP/"));
         }
 
         /// <summary>
@@ -1013,8 +1041,12 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         {
             Vector4 h = data.holeRect;
             if (h.z <= h.x || h.w <= h.y) return;
+            // Keep the material's Hole Overlap under the terrain edge, as the shader does: cut exactly at the edge, the
+            // pixels along it belong to neither surface and the seam shows as a crack.
+            Material mat = zone.material;
+            float m = mat != null && mat.HasProperty("_HoleMargin") ? Mathf.Max(0f, mat.GetFloat("_HoleMargin")) : HoleMargin;
             Vector3 o = zone.transform.position + new Vector3(cx, cy, cz) * (data.chunkCells * data.voxelSize);
-            mesher.ClipXZ(h.x - o.x, h.y - o.z, h.z - o.x, h.w - o.z);
+            mesher.ClipXZ(h.x - m - o.x, h.y - m - o.z, h.z + m - o.x, h.w + m - o.z);
         }
 
         private static GameObject CreateChunkObject(DigZone zone, string name, Vector3 localPosition, Mesh mesh, bool lightmapped)
@@ -1215,6 +1247,12 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
             float chunkSize = data.chunkCells * data.voxelSize;
             GameObject go = CreateChunkObject(zone, $"Chunk_{cx}_{cy}_{cz}", new Vector3(cx, cy, cz) * chunkSize, mesh, zone.bakedLighting);
+            // Part of the stroke: undoing it removes the object and its slot together. Remeshing after undo records nothing.
+            if (!Busy)
+            {
+                Undo.RegisterCreatedObjectUndo(go, "Dig Sculpt");
+                Undo.RegisterCompleteObjectUndo(zone, "Dig Sculpt");
+            }
             int slot = zone.chunkIds.Length;
             zone.chunkIds = Append(zone.chunkIds, ci);
             zone.chunkFilters = Append(zone.chunkFilters, go.GetComponent<MeshFilter>());
@@ -1243,11 +1281,13 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             bool has = mesher.IndexCount > 0;
 
             int slot = zone.ChunkSlot(ci);
+            bool newObjects = false;
             if (slot < 0)
             {
                 if (!has) return;
                 slot = AddChunkObject(zone, data, ci, cx, cy, cz);
                 if (slot < 0) return;
+                newObjects = true;
             }
 
             MeshFilter filter = zone.chunkFilters[slot];
@@ -1259,8 +1299,13 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 mesh = new Mesh { name = $"{data.name}_Chunk_{cx}_{cy}_{cz}" };
                 AssetDatabase.AddObjectToAsset(mesh, data);
                 if (data.chunkMeshes != null && ci < data.chunkMeshes.Length) data.chunkMeshes[ci] = mesh;
-                filter.sharedMesh = mesh;
             }
+            if (filter.sharedMesh != mesh)
+            {
+                filter.sharedMesh = mesh;
+                newObjects = true;
+            }
+            if (newObjects) DigSculptUndo.MarkChunksSeen(zone);
             mesher.WriteTo(mesh);
             if (has) mesh.RecalculateBounds();
             if (has && zone.bakedLighting) PendingLightmapUVs.Add(mesh);
@@ -1300,6 +1345,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             if (data == null) return;
             RemeshRange(zone, new[] { 0, 0, 0, data.nx, data.ny, data.nz });
             if (data.HasGrid) DigSculptUndo.MarkSeen(data);
+            DigSculptUndo.MarkChunksSeen(zone);
         }
 
         /// <summary>Removes chunk objects and restores the terrain. The data asset is kept.</summary>
@@ -1322,6 +1368,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             zone.chunkFilters = null;
             zone.chunkRenderers = null;
             zone.chunkColliders = null;
+            DigSculptUndo.MarkChunksSeen(zone);
             EditorSceneManager.MarkSceneDirty(zone.gameObject.scene);
         }
     }

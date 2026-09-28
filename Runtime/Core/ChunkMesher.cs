@@ -102,6 +102,10 @@ namespace LogicCuteGuy.DigHoleIt
                 for (int plane = 0; plane < 4 && _poly.Count >= 3; plane++) ClipPolygon(plane);
                 for (int k = 2; k < _poly.Count; k++)
                 {
+                    // A triangle that only touches the clip box collapses onto its side: no area, and a chunk of
+                    // nothing else is an invalid collision mesh.
+                    Vector3 a = _pos[_poly[0]];
+                    if (Vector3.Cross(_pos[_poly[k - 1]] - a, _pos[_poly[k]] - a).sqrMagnitude < 1e-12f) continue;
                     _idx.Add(_poly[0]); _idx.Add(_poly[k - 1]); _idx.Add(_poly[k]);
                 }
             }

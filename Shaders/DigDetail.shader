@@ -3,7 +3,8 @@
 // (uv3) and the foliage mask texel of the grid column the instance stands on (uv2.xy): when digging or burying
 // removes the ground there the mask turns black and the whole instance collapses to its root, so it is not drawn.
 // Instances further than the terrain's Detail Distance collapse the same way. uv2.z is the wind sway weight
-// (0 at the root, 1 at the top); the wind follows the terrain's Wind Settings for Grass.
+// (0 at the root, 1 at the top). Wind and its colour follow the terrain's grass (TerrainEngine.cginc,
+// TerrainWaveGrass) on positions in terrain space, so the grass in the hole matches the terrain's around it.
 Shader "DigHoleIt/DigDetail"
 {
     Properties
@@ -13,6 +14,7 @@ Shader "DigHoleIt/DigDetail"
         _Cutoff ("Alpha Cutoff", Range(0, 1)) = 0.5
         _WaveAndDistance ("Wind Speed, Size, Bending, Detail Distance", Vector) = (0.5, 0.5, 0.5, 80)
         _WavingTint ("Wind Tint", Color) = (0.7, 0.6, 0.5, 0)
+        _TerrainPos ("Terrain Position", Vector) = (0, 0, 0, 0)
         [NoScaleOffset] _DigFoliageMask ("Foliage Mask (set by DigHoleIt)", 2D) = "white" {}
     }
 
@@ -30,7 +32,31 @@ Shader "DigHoleIt/DigDetail"
         fixed4 _Color;
         float4 _WaveAndDistance;
         fixed4 _WavingTint;
+        float4 _TerrainPos;
         sampler2D _DigFoliageMask;
+
+        // What the terrain passes its grass shader, measured against its own grass: wave size = Wind Strength * 0.4,
+        // and a wave phase of Wind Speed * 0.05 * the time since the scene loaded (the shaders' _Time.y), so the
+        // zone's grass waves in step with the terrain's.
+        #define DIG_WAVE_SIZE 0.4
+        #define DIG_WAVE_RATE 0.05
+
+        // TerrainEngine.cginc FastSinCos: val in 0..1.
+        void DigFastSinCos(float4 val, out float4 s, out float4 c)
+        {
+            val = val * 6.408849 - 3.1415927;
+            float4 r5 = val * val;
+            float4 r6 = r5 * r5;
+            float4 r7 = r6 * r5;
+            float4 r8 = r6 * r5;
+            float4 r1 = r5 * val;
+            float4 r2 = r1 * r5;
+            float4 r3 = r2 * r5;
+            float4 sin7 = { 1, -0.16161616, 0.0083333, -0.00019841 };
+            float4 cos8 = { -0.5, 0.041666666, -0.0013888889, 0.000024801587 };
+            s = val + r1 * sin7.y + r2 * sin7.z + r3 * sin7.w;
+            c = 1 + r5 * cos8.x + r6 * cos8.y + r7 * cos8.z + r8 * cos8.w;
+        }
 
         struct Input
         {
@@ -50,11 +76,20 @@ Shader "DigHoleIt/DigDetail"
                 return;
             }
 
-            float sway = v.texcoord2.z;
-            float phase = _Time.y * (0.5 + _WaveAndDistance.x * 3.0) + dot(rootWorld.xz, float2(0.35, 0.27)) * (0.5 + _WaveAndDistance.y * 2.0);
-            float wave = sin(phase) + 0.5 * sin(phase * 2.3 + 1.7);
-            v.vertex.xz += float2(wave, wave * 0.6) * (_WaveAndDistance.z * 0.2 * sway);
-            v.color.rgb = lerp(v.color.rgb, v.color.rgb * _WavingTint.rgb * 1.5, saturate(wave * 0.25 + 0.25) * sway * _WaveAndDistance.z);
+            // TerrainWaveGrass, with the vertex in terrain space.
+            float3 p = mul(unity_ObjectToWorld, v.vertex).xyz - _TerrainPos.xyz;
+            float size = _WaveAndDistance.y * DIG_WAVE_SIZE;
+            float4 waves = p.x * float4(0.012, 0.02, 0.06, 0.024) * size + p.z * float4(0.006, 0.02, 0.02, 0.05) * size +
+                           _Time.y * _WaveAndDistance.x * DIG_WAVE_RATE * float4(1.2, 2.0, 1.6, 4.8);
+            float4 s, c;
+            DigFastSinCos(frac(waves), s, c);
+            s = s * s;
+            s = s * s;
+            float lighting = dot(s, normalize(float4(1, 1, 0.4, 0.2))) * 0.7;
+            s *= v.texcoord2.z * _WaveAndDistance.z;
+            float2 move = float2(dot(s, float4(0.024, 0.04, -0.12, 0.096)), dot(s, float4(0.006, 0.02, -0.02, 0.1)));
+            v.vertex.xyz -= mul((float3x3)unity_WorldToObject, float3(move.x, 0.0, move.y)) * _WaveAndDistance.z;
+            v.color.rgb *= 2.0 * lerp(float3(0.5, 0.5, 0.5), _WavingTint.rgb, lighting);
         }
 
         void surf(Input IN, inout SurfaceOutput o)

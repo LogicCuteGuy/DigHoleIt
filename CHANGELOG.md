@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.1] - 2026-09-28
+
+### Fixed
+- Undoing or redoing a bake, a resize or a move of a zone could leave its chunks broken until the next bake: the zone kept pointing at the chunk objects the undo removed, and the chunk objects it brought back showed meshes a later bake had reused. Undo now restores the zone's chunk list with its objects and remeshes a zone whose chunk objects changed. Sculpt strokes that give a chunk its first surface create its object as part of the stroke, so undo removes it again.
+- Visible seam between the terrain and a zone:
+  - A crack along the hole edge, where the terrain's surface and the zone's met exactly (wider from a distance, where the terrain lowers its detail). The zone's surface now runs on under the terrain edge by the material's **Hole Overlap**, in baked meshes as at runtime. The default overlap is 0.1 m (was 0.03 m); materials still at 0.03 m get 0.1 m on their next bake or Apply Material.
+  - Grass in the hole was coloured differently from the terrain's around it: its healthy/dry pattern used world space and the Noise Seed (the terrain uses terrain space and no seed), it was not shaded darker towards the root, and its wind tint was not the terrain's. **DigHoleIt/DigDetail** now follows the terrain's grass shading and wind, in step with it. Zones rebuild their details on the next change to their terrain's trees or details, or bake them again.
+  - A terrain layer's Diffuse Remap tinted the zone but not the terrain: Unity's built-in terrain shaders ignore it. Zones now use it only with terrain shaders that do.
+- Bakes logged "mesh must have at least three distinct vertices to be a valid collision mesh" for chunks that only touch the hole edge (zero-area triangles left by cutting the mesh to the hole).
+
 ## [0.6.0] - 2026-09-28
 
 ### Added

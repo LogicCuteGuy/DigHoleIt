@@ -724,7 +724,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                         DetailMeshBuilder b = builders[k] ??= new DetailMeshBuilder();
                         int tx = s.Texel >= 0 ? s.Texel % (d.nx + 1) : gx, ty = s.Texel >= 0 ? s.Texel / (d.nx + 1) : gz;
                         var maskUv = new Vector2((tx + 0.5f) / (d.nx + 1), (ty + 0.5f) / maskRows);
-                        Color32 tint = Tint(protos[p], origin + s.Root);
+                        Color32 tint = Tint(protos[p], origin + s.Root - terrain.transform.position);
                         if (protos[p].usePrototypeMesh) AddMeshInstance(b, protos[p], p, s, tint, maskUv, meshCache);
                         else AddGrassInstance(b, p, s, tint, maskUv);
                     }
@@ -798,9 +798,13 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             zone.detailRenderers = renderers.ToArray();
         }
 
+        // The terrain shades its grass darker towards the root: the root vertices get this much of the colour.
+        private const float GrassRootShade = 0.63f;
+
         /// <summary>Two crossed quads, like the terrain's grass (billboard grass too: it stays readable from every side).</summary>
         private static void AddGrassInstance(DetailMeshBuilder b, int p, DetailSpot s, Color32 tint, Vector2 maskUv)
         {
+            Color32 root = Color.Lerp(Color.black, tint, GrassRootShade);
             List<int> idx = b.IndicesOf(p);
             float half = s.Width * 0.5f;
             Quaternion tilt = Tilt(s);
@@ -811,8 +815,8 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                 Vector3 right = tilt * new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * half;
                 Vector3 up = n * s.Height;
                 int v0 = b.Positions.Count;
-                b.Vertex(s.Root - right, n, tint, new Vector2(0f, 0f), maskUv, 0f, s.Root);
-                b.Vertex(s.Root + right, n, tint, new Vector2(1f, 0f), maskUv, 0f, s.Root);
+                b.Vertex(s.Root - right, n, root, new Vector2(0f, 0f), maskUv, 0f, s.Root);
+                b.Vertex(s.Root + right, n, root, new Vector2(1f, 0f), maskUv, 0f, s.Root);
                 b.Vertex(s.Root + right + up, n, tint, new Vector2(1f, 1f), maskUv, 1f, s.Root);
                 b.Vertex(s.Root - right + up, n, tint, new Vector2(0f, 1f), maskUv, 1f, s.Root);
                 idx.Add(v0); idx.Add(v0 + 2); idx.Add(v0 + 1);
@@ -855,12 +859,14 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             foreach (int t in m.tri) idx.Add(v0 + t);
         }
 
-        /// <summary>Healthy / dry colour from the prototype's noise, like the terrain's details.</summary>
-        private static Color32 Tint(DetailPrototype p, Vector3 world)
+        /// <summary>
+        /// Healthy / dry colour from the prototype's noise, the way the terrain colours its details: Perlin noise of the
+        /// position in metres from the terrain's corner, times Noise Spread. Noise Seed only moves where details stand.
+        /// </summary>
+        /// <param name="local">Position relative to the terrain.</param>
+        private static Color32 Tint(DetailPrototype p, Vector3 local)
         {
-            float spread = Mathf.Max(1e-4f, p.noiseSpread);
-            float seed = p.noiseSeed * 0.137f;
-            float t = Mathf.Clamp01(Mathf.PerlinNoise(world.x * spread + seed, world.z * spread + seed));
+            float t = Mathf.Clamp01(Mathf.PerlinNoise(local.x * p.noiseSpread, local.z * p.noiseSpread));
             return Color.Lerp(p.dryColor, p.healthyColor, t);
         }
 
@@ -902,6 +908,8 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             mat.SetFloat("_Cutoff", 0.5f);
             mat.SetVector("_WaveAndDistance", new Vector4(td.wavingGrassSpeed, td.wavingGrassStrength, td.wavingGrassAmount, terrain.detailObjectDistance));
             mat.SetColor("_WavingTint", td.wavingGrassTint);
+            Vector3 tp = terrain.transform.position;
+            mat.SetVector("_TerrainPos", new Vector4(tp.x, tp.y, tp.z, 0f));
             mat.SetTexture("_DigFoliageMask", d.foliageMask);
             EditorUtility.SetDirty(mat);
             return mat;
@@ -924,6 +932,10 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             }
             Build(zone);
         }
+
+        // Bumped when details are built differently, so zones built before rebuild on their next foliage refresh.
+        // 2: healthy / dry colours in terrain space and grass shaded darker at the root, like the terrain's.
+        private const int DetailBuildVersion = 2;
 
         /// <summary>
         /// Hash of everything the zone's trees and details are built from except the terrain heights (height changes
@@ -966,6 +978,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
 
                 if (zone.details && td.detailResolution > 0)
                 {
+                    Add(DetailBuildVersion);
                     AddF(terrain.detailObjectDensity);
                     AddF(terrain.detailObjectDistance);
                     AddF(td.wavingGrassSpeed);
