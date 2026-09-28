@@ -46,7 +46,15 @@ Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRCha
 
 ## Install
 
-*Window > Package Manager > + > Add package from git URL*:
+**VRChat Creator Companion (VCC):** add the LogicCuteGuy repository from [docs.logiccuteguy.com](https://docs.logiccuteguy.com/) (**Install via VCC**), or add this listing URL in *Settings > Packages > Add Repository*:
+
+```
+https://vpm.logiccuteguy.com/index.json
+```
+
+Then add **DigHoleIt** to your project. VCC also installs LCGUdonSharp with it. The listing may lag behind the newest GitHub release.
+
+**Git URL:** *Window > Package Manager > + > Add package from git URL*:
 
 ```
 https://github.com/LogicCuteGuy/DigHoleIt.git

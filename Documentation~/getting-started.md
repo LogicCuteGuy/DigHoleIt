@@ -12,12 +12,14 @@
 
 Pick one:
 
+- **VRChat Creator Companion (VCC):** add the LogicCuteGuy repository from [docs.logiccuteguy.com](https://docs.logiccuteguy.com/) (**Install via VCC**), or add
+  `https://vpm.logiccuteguy.com/index.json` in *Settings > Packages > Add Repository*. Then add **DigHoleIt** to your project; VCC installs LCGUdonSharp with it. The listing may lag behind the newest GitHub release.
 - **Git URL:** *Window > Package Manager > + > Add package from git URL* and enter
   `https://github.com/LogicCuteGuy/DigHoleIt.git`.
   Add `#v0.5.0` (or another tag) to the end to pin a version.
 - **Embedded:** clone or copy the repository into your project's `Packages/com.logiccuteguy.digholeit` folder.
 
-In a VRChat project, install LCGUdonSharp first. The Udon runtime does not compile without it.
+With a Git URL or embedded install in a VRChat project, install LCGUdonSharp first. The Udon runtime does not compile without it.
 
 ## Demo scenes
 
