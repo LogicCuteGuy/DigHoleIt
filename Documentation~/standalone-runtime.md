@@ -11,7 +11,7 @@ Bake the zone as usual, then click **Add Standalone Runtime** in the zone inspec
 | `Dig(Vector3 world, float radius)` | Digs a sphere at a world position. |
 | `Add(Vector3 world, float radius)` | Adds a sphere of soil. |
 | `Paint(Vector3 world, float radius, int layer)` | Paints voxels: 0 auto (erase paint), 1–4 terrain layers 0–3, 5 dug soil, 6–17 terrain layers 4–15 (`DigFormat.PaintValue(terrainLayer)`). |
-| `Tree(Vector3 world, float radius, int index)` / `Detail(...)` | Plants `treePrefabs[index]` / `detailPrefabs[index]` at a surface point, upright with a yaw and scale from the edit; index -1 erases planted ones within the radius. Digging or adding soil over a planted object removes it. |
+| `Tree(Vector3 world, float radius, int index)` / `Detail(...)` | Plants `treePrefabs[index]` / `detailPrefabs[index]` at a surface point, upright with a yaw and scale from the edit; index -1 erases planted ones and the zone's baked terrain trees or details within the radius (until `ResetToBaked`). Digging or adding soil over a planted object removes it. |
 | `Smooth(Vector3 world, float radius, float strength)` | Smooths the surface in the sphere (strength 0–1). Not idempotent: apply each smooth edit once, and don't feed your own back into `ApplyEdit`. |
 | `SpawnedNear(Vector3 world, float meters, bool tree)` | Whether something was planted near a point. |
 | `LocalEdit(Vector3 world, float radius, int op, int layer = 0)` | The general form. Raises `LocalEditRequested`, then applies the edit. |

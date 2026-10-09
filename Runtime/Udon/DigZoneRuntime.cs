@@ -171,6 +171,8 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         private int _sLo;
         private int _sHi;
         private bool[] _treeBaked;
+        // Baked trees an erase edit took away: they stay hidden whatever the ground does, until a reset.
+        private bool[] _treeErased;
 
         // Smoothing: the samples it reads (one more on each side than it changes) and the result, across chunks.
         private byte[] _smIn;
@@ -268,6 +270,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 // Which trees the bake left standing, for resets.
                 _treeBaked = new bool[treeObjects.Length];
                 for (int t = 0; t < treeObjects.Length; t++) _treeBaked[t] = treeObjects[t] != null && treeObjects[t].activeSelf;
+                _treeErased = new bool[treeObjects.Length];
             }
 
             int spawnCap = maxSpawned > 0 ? maxSpawned : 0;
@@ -555,6 +558,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 if (treeObjects != null && _treeBaked != null)
                     for (int t = 0; t < treeObjects.Length && t < _treeBaked.Length; t++)
                         if (treeObjects[t] != null) treeObjects[t].SetActive(_treeBaked[t]);
+                if (_treeErased != null) System.Array.Clear(_treeErased, 0, _treeErased.Length);
             }
         }
 
@@ -765,6 +769,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             if (layer == 0)
             {
                 _EraseSpawned(p, r, tree ? 1 : 2);
+                _EraseBaked(p, r, tree);
                 return;
             }
             GameObject[] prefabs = tree ? treePrefabs : detailPrefabs;
@@ -786,6 +791,64 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             _spawnTree[_spawnCount] = tree;
             _spawnEdit[_spawnCount] = e;
             _spawnCount++;
+        }
+
+        /// <summary>
+        /// Takes away the baked terrain trees (anchor within <paramref name="r"/> of <paramref name="p"/>, grid units) or
+        /// details (column or surface anchor within it). Their mask texels lose their surface (a = 0), so remeshing never
+        /// brings them back; a reset reloads the baked mask.
+        /// </summary>
+        private void _EraseBaked(Vector3 p, float r, bool tree)
+        {
+            if (!_foliage) return;
+            float rr = r * r;
+            if (tree)
+            {
+                if (treeObjects == null || treeAnchors == null || _treeErased == null) return;
+                int n = Mathf.Min(treeObjects.Length, Mathf.Min(treeAnchors.Length, _treeErased.Length));
+                for (int t = 0; t < n; t++)
+                {
+                    if (_treeErased[t] || (treeAnchors[t] - p).sqrMagnitude > rr) continue;
+                    _treeErased[t] = true;
+                    if (treeObjects[t] != null) treeObjects[t].SetActive(false);
+                }
+                return;
+            }
+
+            if (!_LoadMask()) return;
+            int stride = nx + 1;
+            int x0 = Mathf.Max(0, Mathf.FloorToInt(p.x - r)), x1 = Mathf.Min(nx, Mathf.CeilToInt(p.x + r));
+            int z0 = Mathf.Max(0, Mathf.FloorToInt(p.z - r)), z1 = Mathf.Min(nz, Mathf.CeilToInt(p.z + r));
+            bool any = false;
+            for (int z = z0; z <= z1; z++)
+                for (int x = x0; x <= x1; x++)
+                {
+                    int i = x + stride * z;
+                    Color32 c = _mask[i];
+                    if (c.a == 0) continue;
+                    float dx = x - p.x, dy = ((c.g << 8) | c.b) / DigFoliage.AnchorScale - p.y, dz = z - p.z;
+                    if (dx * dx + dy * dy + dz * dz > rr) continue;
+                    c.r = DigFoliage.Removed;
+                    c.a = 0;
+                    _mask[i] = c;
+                    any = true;
+                }
+            if (surfaceDetailAnchors != null)
+            {
+                int texel0 = stride * (nz + 1);
+                for (int k = 0; k < surfaceDetailAnchors.Length && texel0 + k < _mask.Length; k++)
+                {
+                    Color32 c = _mask[texel0 + k];
+                    if (c.a == 0 || (surfaceDetailAnchors[k] - p).sqrMagnitude > rr) continue;
+                    c.r = DigFoliage.Removed;
+                    c.a = 0;
+                    _mask[texel0 + k] = c;
+                    any = true;
+                }
+            }
+            if (!any) return;
+            if (!_EnsureMaskTex()) _maskTex.SetPixels32(_mask);
+            _maskDirty = true;
         }
 
         /// <summary>Destroys the spawned objects within <paramref name="r"/> of <paramref name="p"/> (grid units). Kind: 0 all, 1 trees, 2 details.</summary>
@@ -1005,27 +1068,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         /// <summary>Writes the meshed chunk's own columns (_fx0.. from _OwnColumns) into the live mask texture.</summary>
         private void _WriteMask()
         {
-            if (_maskTex == null)
-            {
-                _maskTex = new Texture2D(foliageMask.width, foliageMask.height, TextureFormat.RGBA32, false, true);
-                _maskTex.filterMode = FilterMode.Point;
-                _maskTex.wrapMode = TextureWrapMode.Clamp;
-                _maskTex.SetPixels32(_mask);
-                // The detail materials are shared assets: give the renderers the live mask instead.
-                MaterialPropertyBlock block = new MaterialPropertyBlock();
-                if (detailRenderers != null)
-                {
-                    for (int i = 0; i < detailRenderers.Length; i++)
-                    {
-                        MeshRenderer r = detailRenderers[i];
-                        if (r == null) continue;
-                        r.GetPropertyBlock(block);
-                        block.SetTexture("_DigFoliageMask", _maskTex);
-                        r.SetPropertyBlock(block);
-                    }
-                }
-            }
-            else
+            if (!_EnsureMaskTex())
             {
                 int stride = nx + 1;
                 if (_fChanged)
@@ -1047,6 +1090,36 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 }
             }
             _maskDirty = true;
+        }
+
+        /// <summary>
+        /// Makes the live mask texture from _mask on the first change and gives it to the detail renderers. True if it was
+        /// made now (so it already holds all of _mask).
+        /// </summary>
+        private bool _EnsureMaskTex()
+        {
+            if (_maskTex == null)
+            {
+                _maskTex = new Texture2D(foliageMask.width, foliageMask.height, TextureFormat.RGBA32, false, true);
+                _maskTex.filterMode = FilterMode.Point;
+                _maskTex.wrapMode = TextureWrapMode.Clamp;
+                _maskTex.SetPixels32(_mask);
+                // The detail materials are shared assets: give the renderers the live mask instead.
+                MaterialPropertyBlock block = new MaterialPropertyBlock();
+                if (detailRenderers != null)
+                {
+                    for (int i = 0; i < detailRenderers.Length; i++)
+                    {
+                        MeshRenderer r = detailRenderers[i];
+                        if (r == null) continue;
+                        r.GetPropertyBlock(block);
+                        block.SetTexture("_DigFoliageMask", _maskTex);
+                        r.SetPropertyBlock(block);
+                    }
+                }
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -1074,7 +1147,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 byte r = DigFoliage.StandsInCell(_mGrid, i, w, w * h, DigFoliage.Frac(a.x, x), DigFoliage.Frac(a.y, y), DigFoliage.Frac(a.z, z))
                     ? DigFoliage.Standing : DigFoliage.Removed;
                 Color32 c = _mask[texel0 + k];
-                if (c.r == r) continue;
+                if (c.a == 0 || c.r == r) continue; // a = 0: erased
                 c.r = r;
                 _mask[texel0 + k] = c;
                 if (_sHi < _sLo)
@@ -1099,6 +1172,11 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             {
                 GameObject go = treeObjects[t];
                 if (go == null) continue;
+                if (_treeErased != null && t < _treeErased.Length && _treeErased[t])
+                {
+                    go.SetActive(false);
+                    continue;
+                }
                 // The chunk holds the grid cell around the anchor (DigFoliageBaker.AnchorChunk).
                 Vector3 a = treeAnchors[t];
                 int x = Mathf.Clamp(Mathf.FloorToInt(a.x), _fr0, _fr3 - 1);

@@ -80,7 +80,32 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                     }
                 }
             }
+            if (GUILayout.Button(new GUIContent("Refresh Holes",
+                    "Fill every terrain hole that no Dig Zone in the open scenes cut, for holes a deleted zone left behind that Fix Leftover Holes can't find.")))
+                RefreshHoles(terrain);
             return firstBaked;
+        }
+
+        private static void RefreshHoles(Terrain terrain)
+        {
+            // Holes with a record first: they also give their trees back to the terrain.
+            int leftovers = DigTerrainHoles.FindLeftovers(terrain.terrainData).Count;
+            if (leftovers > 0) DigTerrainHoles.FixLeftoverHoles(terrain);
+            int stray = DigTerrainHoles.HolesOutsideZones(terrain, false);
+            if (stray == 0)
+            {
+                Debug.Log(leftovers > 0
+                    ? $"[DigHoleIt] Filled the holes of {leftovers} deleted Dig Zone(s); no other holes outside Dig Zones."
+                    : "[DigHoleIt] No terrain holes outside Dig Zones.", terrain);
+                return;
+            }
+            if (!EditorUtility.DisplayDialog("DigHoleIt",
+                    $"{stray} terrain hole cells are outside every Dig Zone in the open scenes. Fill them?\n\n" +
+                    "Holes you painted by hand, and holes of Dig Zones in scenes that are not open, are filled too. You can undo this.",
+                    "Fill", "Cancel"))
+                return;
+            DigTerrainHoles.HolesOutsideZones(terrain, true);
+            Debug.Log($"[DigHoleIt] Filled {stray} terrain hole cells outside Dig Zones.", terrain);
         }
 
         /// <summary>Zone boxes, diggable areas and resize handles for every zone on the terrain.</summary>

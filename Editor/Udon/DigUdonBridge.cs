@@ -179,7 +179,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
 
         /// <summary>
         /// Fills empty prefab lists on the scene's zone runtimes, and empty Zones and Layer Names on its DigTools (the
-        /// zones of the scene; the names of the first zone's terrain layers).
+        /// zones of the scene; the names of the first zone's terrain layers). Zones that were deleted drop out of Zones.
         /// </summary>
         private static void FillDefaults(Scene scene)
         {
@@ -206,9 +206,11 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
             {
                 bool changed = false;
                 Undo.RecordObject(tool, "DigHoleIt Defaults");
-                if (tool.zones == null || tool.zones.Length == 0 || System.Array.TrueForAll(tool.zones, z => z == null))
+                DigZoneRuntime[] kept = tool.zones == null ? new DigZoneRuntime[0] : System.Array.FindAll(tool.zones, z => z != null);
+                if (kept.Length == 0) kept = runtimes.ToArray();
+                if (tool.zones == null || kept.Length != tool.zones.Length)
                 {
-                    tool.zones = runtimes.ToArray();
+                    tool.zones = kept;
                     changed = true;
                 }
                 if ((tool.layerNames == null || tool.layerNames.Length == 0) && first != null)
@@ -219,6 +221,24 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
                 if (changed) Commit(tool);
             }
         }
+
+        /// <summary>
+        /// Points <paramref name="tool"/> at every zone in its scene and the first zone terrain's layer names, for after
+        /// zones were added or removed (undoable).
+        /// </summary>
+        public static void RefreshTool(DigTool tool)
+        {
+            var runtimes = new List<DigZoneRuntime>();
+            foreach (GameObject root in tool.gameObject.scene.GetRootGameObjects())
+                runtimes.AddRange(root.GetComponentsInChildren<DigZoneRuntime>(true));
+            Undo.RecordObject(tool, "Refresh Dig Tool Zones");
+            tool.zones = runtimes.ToArray();
+            DigZone first = runtimes.Count > 0 ? runtimes[0].GetComponent<DigZone>() : null;
+            if (first != null) tool.layerNames = DigSpawnDefaults.LayerNames(first);
+            Commit(tool);
+        }
+
+        /// <summary>Copies the zone's terrain trees and details (see DigFoliageBaker).</summary>
         private static void CopyFoliage(DigZone zone, DigZoneRuntime rt)
         {
             DigZoneData data = zone.data;

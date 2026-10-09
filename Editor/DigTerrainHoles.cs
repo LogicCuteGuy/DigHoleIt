@@ -222,6 +222,46 @@ namespace LogicCuteGuy.DigHoleIt.Editor
             return leftovers.Count;
         }
 
+        /// <summary>
+        /// Terrain hole cells of <paramref name="terrain"/> that no Dig Zone in the open scenes cut: holes of zones that
+        /// were deleted without a record of their cut (their data asset gone or copied), or painted by hand.
+        /// With <paramref name="fill"/> they are filled (one undo step). Returns how many there are.
+        /// </summary>
+        public static int HolesOutsideZones(Terrain terrain, bool fill)
+        {
+            TerrainData td = terrain.terrainData;
+            if (td == null) return 0;
+            var rects = new List<RectInt>();
+            foreach (DigZone z in Object.FindObjectsByType<DigZone>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                DigZoneData d = z.data;
+                if (d != null && d.cutTerrain == td && d.cutRect.width > 0 && d.cutRect.height > 0) rects.Add(d.cutRect);
+            }
+
+            int res = td.holesResolution;
+            bool[,] holes = td.GetHoles(0, 0, res, res); // true = surface, false = hole; [z, x]
+            int count = 0;
+            for (int z = 0; z < res; z++)
+            for (int x = 0; x < res; x++)
+            {
+                if (holes[z, x]) continue;
+                bool inZone = false;
+                foreach (RectInt r in rects)
+                    if (x >= r.xMin && x < r.xMax && z >= r.yMin && z < r.yMax) { inZone = true; break; }
+                if (inZone) continue;
+                holes[z, x] = true;
+                count++;
+            }
+            if (fill && count > 0)
+            {
+                Undo.RegisterCompleteObjectUndo(td, "Refresh Terrain Holes");
+                td.SetHoles(0, 0, holes);
+                EditorUtility.SetDirty(td);
+                AssetDatabase.SaveAssets();
+            }
+            return count;
+        }
+
         /// <summary>Fills the zone's terrain hole and deletes the zone (one undo step).</summary>
         public static void DeleteZone(DigZone zone)
         {

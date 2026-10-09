@@ -69,6 +69,8 @@ namespace LogicCuteGuy.DigHoleIt
             public long Edit;
         }
         private readonly List<Spawned> _spawned = new List<Spawned>();
+        // Baked trees an erase edit took away: they stay hidden whatever the ground does, until a reset.
+        private bool[] _treeErased;
         private readonly int[] _changed = new int[6];
 
         public IReadOnlyList<long> EditLog => _log;
@@ -193,7 +195,7 @@ namespace LogicCuteGuy.DigHoleIt
 
         private bool ApplySpawn(long e, Vector3 p, float r, bool tree, int layer)
         {
-            if (layer == 0) return EraseSpawned(p, r, tree ? 1 : 2);
+            if (layer == 0) return EraseSpawned(p, r, tree ? 1 : 2) | EraseBaked(p, r, tree);
             GameObject[] prefabs = tree ? treePrefabs : detailPrefabs;
             if (prefabs == null || layer > prefabs.Length || prefabs[layer - 1] == null || _spawned.Count >= maxSpawned) return false;
             foreach (Spawned s in _spawned)
@@ -205,6 +207,70 @@ namespace LogicCuteGuy.DigHoleIt
             go.transform.localScale = prefab.transform.localScale * DigFoliage.SpawnScale(e);
             _spawned.Add(new Spawned { Go = go, At = p, Tree = tree, Edit = e });
             return true;
+        }
+
+        /// <summary>
+        /// Takes away the baked terrain trees (anchor within <paramref name="r"/> of <paramref name="p"/>, grid units) or
+        /// details (column or surface anchor within it). Their mask texels lose their surface (a = 0), so remeshing never
+        /// brings them back; a reset reloads the baked mask. True if any went.
+        /// </summary>
+        private bool EraseBaked(Vector3 p, float r, bool tree)
+        {
+            float rr = r * r;
+            bool any = false;
+            if (tree)
+            {
+                GameObject[] trees = _zone.treeObjects;
+                Vector3[] anchors = _zone.treeAnchors;
+                if (trees == null || anchors == null) return false;
+                if (_treeErased == null || _treeErased.Length != trees.Length) _treeErased = new bool[trees.Length];
+                for (int t = 0; t < trees.Length && t < anchors.Length; t++)
+                {
+                    if (_treeErased[t] || (anchors[t] - p).sqrMagnitude > rr) continue;
+                    _treeErased[t] = true;
+                    if (trees[t] != null) trees[t].SetActive(false);
+                    any = true;
+                }
+                return any;
+            }
+
+            if (_mask == null) return false;
+            int nx = _data.nx, nz = _data.nz, stride = nx + 1;
+            int x0 = Mathf.Max(0, Mathf.FloorToInt(p.x - r)), x1 = Mathf.Min(nx, Mathf.CeilToInt(p.x + r));
+            int z0 = Mathf.Max(0, Mathf.FloorToInt(p.z - r)), z1 = Mathf.Min(nz, Mathf.CeilToInt(p.z + r));
+            for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++)
+            {
+                int i = x + stride * z;
+                Color32 c = _mask[i];
+                if (c.a == 0) continue;
+                float dx = x - p.x, dy = ((c.g << 8) | c.b) / DigFoliage.AnchorScale - p.y, dz = z - p.z;
+                if (dx * dx + dy * dy + dz * dz > rr) continue;
+                c.r = DigFoliage.Removed;
+                c.a = 0;
+                _mask[i] = c;
+                any = true;
+            }
+            Vector3[] surface = _zone.surfaceDetailAnchors;
+            if (surface != null)
+            {
+                int texel0 = stride * (nz + 1);
+                for (int k = 0; k < surface.Length && texel0 + k < _mask.Length; k++)
+                {
+                    Color32 c = _mask[texel0 + k];
+                    if (c.a == 0 || (surface[k] - p).sqrMagnitude > rr) continue;
+                    c.r = DigFoliage.Removed;
+                    c.a = 0;
+                    _mask[texel0 + k] = c;
+                    any = true;
+                }
+            }
+            if (any)
+            {
+                EnsureMaskTexture();
+                _maskDirty = true;
+            }
+            return any;
         }
 
         /// <summary>Destroys the spawned objects within <paramref name="r"/> of <paramref name="p"/> (grid units). Kind: 0 all, 1 trees, 2 details.</summary>
@@ -239,6 +305,7 @@ namespace LogicCuteGuy.DigHoleIt
             foreach (int ci in _dirtyList) _dirty[ci] = false;
             _dirtyList.Clear();
 
+            if (_treeErased != null) Array.Clear(_treeErased, 0, _treeErased.Length);
             if (_mask != null)
             {
                 _mask = _data.foliageMask.GetPixels32();
@@ -296,7 +363,11 @@ namespace LogicCuteGuy.DigHoleIt
 
         private void LateUpdate()
         {
-            if (_dirtyList.Count == 0) return;
+            if (_dirtyList.Count == 0)
+            {
+                ApplyMask(); // an erase changes the mask without remeshing
+                return;
+            }
 
             if (maxChunksPerFrame > 0 && _dirtyList.Count > maxChunksPerFrame)
             {
@@ -317,13 +388,15 @@ namespace LogicCuteGuy.DigHoleIt
                 UpdateFoliage(ci);
             }
             _dirtyList.RemoveRange(0, n);
+            ApplyMask();
+        }
 
-            if (_maskDirty)
-            {
-                _maskDirty = false;
-                _maskTex.SetPixels32(_mask);
-                _maskTex.Apply(false);
-            }
+        private void ApplyMask()
+        {
+            if (!_maskDirty || _maskTex == null) return;
+            _maskDirty = false;
+            _maskTex.SetPixels32(_mask);
+            _maskTex.Apply(false);
         }
 
         /// <summary>
@@ -376,7 +449,7 @@ namespace LogicCuteGuy.DigHoleIt
                 Vector3 a = anchors[k];
                 byte r = DigFoliage.PointStands(_grid, _data.nx, _data.ny, _data.nz, a.x, a.y, a.z) ? DigFoliage.Standing : DigFoliage.Removed;
                 Color32 c = _mask[texel0 + k];
-                if (c.r == r) continue;
+                if (c.a == 0 || c.r == r) continue; // a = 0: erased
                 c.r = r;
                 _mask[texel0 + k] = c;
                 any = true;
@@ -416,7 +489,8 @@ namespace LogicCuteGuy.DigHoleIt
             {
                 if (trees[t] == null) continue;
                 Vector3 a = anchors[t];
-                trees[t].SetActive(DigFoliage.PointStands(_grid, _data.nx, _data.ny, _data.nz, a.x, a.y, a.z));
+                bool erased = _treeErased != null && t < _treeErased.Length && _treeErased[t];
+                trees[t].SetActive(!erased && DigFoliage.PointStands(_grid, _data.nx, _data.ny, _data.nz, a.x, a.y, a.z));
             }
         }
 

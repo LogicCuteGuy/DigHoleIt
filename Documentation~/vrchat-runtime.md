@@ -60,7 +60,7 @@ Methods other behaviours can call:
 | `maxSpawned` | Most planted objects; further plant edits are ignored. |
 | `foliageMask`, `detailRenderers`, `treeObjects` | The zone's terrain trees and details, filled in by the bridge. When a remeshed chunk finds the ground under a tree or detail (also on walls and cave ceilings: `surfaceDetailAnchors`) dug away or buried, the tree is deactivated and the detail renderers get a live copy of the foliage mask (through a MaterialPropertyBlock). A reset brings them back. |
 
-Edit ops (`DigFormat`): `OpDig = 0`, `OpAdd = 1`, `OpSmooth = 2` (layer = strength in 1/31), `OpPaint = 3`, `OpTree = 4`, `OpDetail = 5` (layer = prefab index + 1, 0 erases planted ones in the sphere).
+Edit ops (`DigFormat`): `OpDig = 0`, `OpAdd = 1`, `OpSmooth = 2` (layer = strength in 1/31), `OpPaint = 3`, `OpTree = 4`, `OpDetail = 5` (layer = prefab index + 1, 0 erases planted ones and the zone's baked terrain trees or details in the sphere; they stay gone until a reset).
 Smoothing is not idempotent, so `DigSync` does not predict it: the player who smooths sees it when it comes back in log order (one round trip).
 `_SpawnedNear(Vector3 world, float meters, bool tree)` tells whether something was planted near a point. `OpSmooth = 2` is editor only and is rejected at runtime.
 
