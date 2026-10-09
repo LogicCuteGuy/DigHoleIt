@@ -23,7 +23,9 @@ namespace LogicCuteGuy.DigHoleIt.Editor
                     if (GUILayout.Button(new GUIContent("Add Standalone Runtime",
                             "Adds DigZoneRuntimeStandalone so this zone can be dug at runtime from C# (Dig, Add, Paint).")))
                     {
-                        Undo.AddComponent<DigZoneRuntimeStandalone>(zone.gameObject);
+                        var added = Undo.AddComponent<DigZoneRuntimeStandalone>(zone.gameObject);
+                        added.treePrefabs = DigSpawnDefaults.Trees(zone);
+                        added.detailPrefabs = DigSpawnDefaults.Details(zone);
                         GUIUtility.ExitGUI();
                     }
                 }

@@ -5,6 +5,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace LogicCuteGuy.DigHoleIt.Udon.Editor
 {
@@ -25,6 +26,13 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
             DigZoneEditor.RuntimeGUI += DrawRuntimeGUI;
             EditorSceneManager.sceneOpened += (scene, mode) => UpgradeRuntimes();
             EditorApplication.delayCall += UpgradeRuntimes;
+            // Pens and zones dropped in since: give them their defaults before they run or get uploaded.
+            EditorSceneManager.sceneSaving += (scene, path) => FillDefaults(scene);
+            EditorApplication.playModeStateChanged += state =>
+            {
+                if (state != PlayModeStateChange.ExitingEditMode) return;
+                for (int i = 0; i < EditorSceneManager.sceneCount; i++) FillDefaults(EditorSceneManager.GetSceneAt(i));
+            };
         }
 
         public static bool HasRuntime(DigZone zone) => zone.GetComponent<DigZoneRuntime>() != null;
@@ -149,9 +157,68 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
             rt.maxBrushRadius = zone.maxBrushRadius;
             CopyChunkObjects(zone, rt);
             CopyFoliage(zone, rt);
+            FillPrefabs(zone, rt);
         }
 
-        /// <summary>Copies the zone's terrain trees and details (see DigFoliageBaker).</summary>
+        /// <summary>Gives a runtime with empty Tree Prefabs / Detail Prefabs the defaults (DigSpawnDefaults). True if it changed.</summary>
+        private static bool FillPrefabs(DigZone zone, DigZoneRuntime rt)
+        {
+            bool changed = false;
+            if (rt.treePrefabs == null || rt.treePrefabs.Length == 0)
+            {
+                rt.treePrefabs = DigSpawnDefaults.Trees(zone);
+                changed = rt.treePrefabs.Length > 0;
+            }
+            if (rt.detailPrefabs == null || rt.detailPrefabs.Length == 0)
+            {
+                rt.detailPrefabs = DigSpawnDefaults.Details(zone);
+                changed |= rt.detailPrefabs.Length > 0;
+            }
+            return changed;
+        }
+
+        /// <summary>
+        /// Fills empty prefab lists on the scene's zone runtimes, and empty Zones and Layer Names on its DigTools (the
+        /// zones of the scene; the names of the first zone's terrain layers).
+        /// </summary>
+        private static void FillDefaults(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded) return;
+            var runtimes = new List<DigZoneRuntime>();
+            var tools = new List<DigTool>();
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                runtimes.AddRange(root.GetComponentsInChildren<DigZoneRuntime>(true));
+                tools.AddRange(root.GetComponentsInChildren<DigTool>(true));
+            }
+
+            foreach (DigZoneRuntime rt in runtimes)
+            {
+                DigZone zone = rt.GetComponent<DigZone>();
+                if (zone == null) continue;
+                Undo.RecordObject(rt, "DigHoleIt Defaults");
+                if (FillPrefabs(zone, rt)) Commit(rt);
+            }
+
+            if (runtimes.Count == 0) return;
+            DigZone first = runtimes[0].GetComponent<DigZone>();
+            foreach (DigTool tool in tools)
+            {
+                bool changed = false;
+                Undo.RecordObject(tool, "DigHoleIt Defaults");
+                if (tool.zones == null || tool.zones.Length == 0 || System.Array.TrueForAll(tool.zones, z => z == null))
+                {
+                    tool.zones = runtimes.ToArray();
+                    changed = true;
+                }
+                if ((tool.layerNames == null || tool.layerNames.Length == 0) && first != null)
+                {
+                    tool.layerNames = DigSpawnDefaults.LayerNames(first);
+                    changed |= tool.layerNames.Length > 0;
+                }
+                if (changed) Commit(tool);
+            }
+        }
         private static void CopyFoliage(DigZone zone, DigZoneRuntime rt)
         {
             DigZoneData data = zone.data;
@@ -213,6 +280,7 @@ namespace LogicCuteGuy.DigHoleIt.Udon.Editor
                 EditorSceneManager.MarkSceneDirty(rt.gameObject.scene);
                 Debug.Log($"[DigHoleIt] Updated the VRChat runtime of '{zone.name}' to the per-chunk grid format.", zone);
             }
+            for (int i = 0; i < EditorSceneManager.sceneCount; i++) FillDefaults(EditorSceneManager.GetSceneAt(i));
         }
 
         private static void Commit(UdonSharpBehaviour behaviour)

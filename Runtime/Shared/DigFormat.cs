@@ -16,8 +16,10 @@ namespace LogicCuteGuy.DigHoleIt
     /// Edit (long, all 64 bits used):
     ///   bits  0-15 x, 16-31 y, 32-47 z : zone grid position in 1/16 voxel
     ///   bits 48-55 radius              : 1/8 voxel
-    ///   bits 56-58 op                  : 0 dig, 1 add, 3 paint
-    ///   bits 59-63 layer               : paint value (paint), value given to the added soil (add, 0 = leave as is)
+    ///   bits 56-58 op                  : 0 dig, 1 add, 2 smooth, 3 paint, 4 tree, 5 detail
+    ///   bits 59-63 layer               : paint value (paint), value given to the added soil (add, 0 = leave as is),
+    ///                                    prefab index + 1 (tree, detail; 0 = erase the spawned ones in the sphere),
+    ///                                    strength in 1/31 (smooth)
     /// </summary>
     public static class DigFormat
     {
@@ -28,8 +30,18 @@ namespace LogicCuteGuy.DigHoleIt
 
         public const int OpDig = 0;
         public const int OpAdd = 1;
-        public const int OpSmooth = 2; // editor only, not idempotent, never networked
+        /// <summary>
+        /// Blends each sample towards its neighbours. Not idempotent: runtimes apply it once, in log order, and DigSync
+        /// does not predict it.
+        /// </summary>
+        public const int OpSmooth = 2;
+        /// <summary>Largest smoothing strength in an edit's layer bits (strength = layer / SmoothSteps).</summary>
+        public const int SmoothSteps = 31;
         public const int OpPaint = 3;
+        /// <summary>Spawns tree prefab layer - 1 of the zone at the edit point, or erases spawned trees (layer 0).</summary>
+        public const int OpTree = 4;
+        /// <summary>Spawns detail prefab layer - 1 of the zone at the edit point, or erases spawned details (layer 0).</summary>
+        public const int OpDetail = 5;
 
         public const int LayerAuto = 0;
         public const int LayerDugSoil = 5;

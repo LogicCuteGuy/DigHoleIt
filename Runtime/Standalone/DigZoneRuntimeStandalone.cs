@@ -18,6 +18,14 @@ namespace LogicCuteGuy.DigHoleIt
         [Tooltip("Chunks remeshed per frame. 0 = all dirty chunks immediately.")]
         [Min(0)] public int maxChunksPerFrame = 4;
 
+        [Header("Spawned Trees And Details")]
+        [Tooltip("Prefabs a Dig Tool in Tree mode places. The edit names one by its index, so every client needs the same list.")]
+        public GameObject[] treePrefabs;
+        [Tooltip("Prefabs a Dig Tool in Detail mode places (grass, flowers, rocks).")]
+        public GameObject[] detailPrefabs;
+        [Tooltip("Most trees and details placed at runtime; further ones are ignored.")]
+        [Min(0)] public int maxSpawned = 2048;
+
         /// <summary>Raised when this client makes an edit (before it is applied locally). Send it to other clients.</summary>
         public event Action<long> LocalEditRequested;
 
@@ -51,6 +59,16 @@ namespace LogicCuteGuy.DigHoleIt
         private Texture2D _maskTex;
         private bool _maskDirty;
         private readonly List<long> _log = new List<long>();
+
+        // Trees and details spawned by edits.
+        private struct Spawned
+        {
+            public GameObject Go;
+            public Vector3 At; // grid position
+            public bool Tree;
+            public long Edit;
+        }
+        private readonly List<Spawned> _spawned = new List<Spawned>();
         private readonly int[] _changed = new int[6];
 
         public IReadOnlyList<long> EditLog => _log;
@@ -97,7 +115,18 @@ namespace LogicCuteGuy.DigHoleIt
         /// <summary>Paints <paramref name="layer"/> (DigFormat: 0 auto, 1-4 terrain layers 0-3, 5 dug soil, 6-17 terrain layers 4-15) onto the voxels in the sphere.</summary>
         public void Paint(Vector3 world, float radiusMeters, int layer) => LocalEdit(world, radiusMeters, DigFormat.OpPaint, layer);
 
-        /// <param name="layer">Paint layer for OpPaint, or the layer given to added soil for OpAdd (0 = leave as is).</param>
+        /// <summary>Smooths the surface in the sphere; <paramref name="strength"/> 0..1.</summary>
+        public void Smooth(Vector3 world, float radiusMeters, float strength) =>
+            LocalEdit(world, radiusMeters, DigFormat.OpSmooth, Mathf.Clamp(Mathf.RoundToInt(strength * DigFormat.SmoothSteps), 1, DigFormat.SmoothSteps));
+
+        /// <summary>Places <see cref="treePrefabs"/>[index] at a surface point, or erases spawned trees within the radius (index -1).</summary>
+        public void Tree(Vector3 world, float radiusMeters, int index) => LocalEdit(world, radiusMeters, DigFormat.OpTree, index + 1);
+
+        /// <summary>Places <see cref="detailPrefabs"/>[index] at a surface point, or erases spawned details within the radius (index -1).</summary>
+        public void Detail(Vector3 world, float radiusMeters, int index) => LocalEdit(world, radiusMeters, DigFormat.OpDetail, index + 1);
+
+        /// <param name="layer">Paint layer for OpPaint, the layer given to added soil for OpAdd (0 = leave as is), or
+        /// prefab index + 1 for OpTree and OpDetail (0 = erase).</param>
         public void LocalEdit(Vector3 world, float radiusMeters, int op, int layer = 0)
         {
             if (!enabled || !Contains(world)) return;
@@ -107,17 +136,52 @@ namespace LogicCuteGuy.DigHoleIt
             ApplyEdit(e);
         }
 
-        /// <summary>Applies a packed edit (dig, add and paint are idempotent). Returns true if the grid changed.</summary>
+        /// <summary>
+        /// Applies a packed edit (all are idempotent: a spawn finds the object it made before). Returns true if the grid
+        /// or the spawned trees and details changed.
+        /// </summary>
         public bool ApplyEdit(long e)
         {
             if (!enabled) return false;
             DigFormat.Unpack(e, out Vector3 p, out float r, out int op);
             int layer = DigFormat.UnpackLayer(e);
+            if (op == DigFormat.OpTree || op == DigFormat.OpDetail)
+            {
+                if (!ApplySpawn(e, p, r, op == DigFormat.OpTree, layer)) return false;
+                _log.Add(e);
+                EditApplied?.Invoke(e);
+                return true;
+            }
+            if (op == DigFormat.OpSmooth)
+            {
+                // Not idempotent: apply each smooth edit once (don't echo your own back into ApplyEdit).
+                if (!DigGridUtil.Smooth(_grid, _data.nx, _data.ny, _data.nz, _data.editBox, p, r, layer / (float)DigFormat.SmoothSteps, _changed)) return false;
+                _log.Add(e);
+                MarkChanged();
+                EditApplied?.Invoke(e);
+                return true;
+            }
             if (op != DigFormat.OpDig && op != DigFormat.OpAdd && op != DigFormat.OpPaint) return false;
             if (layer > DigFormat.LayerMax) return false;
-            if (!DigBrush.Stamp(_grid, _paint, _data.nx, _data.ny, _data.editBox, p.x, p.y, p.z, r, op, layer, _changed)) return false;
+            // Digging takes away what was planted in the sphere, adding soil buries it.
+            bool erased = op != DigFormat.OpPaint && EraseSpawned(p, r, 0);
+            if (!DigBrush.Stamp(_grid, _paint, _data.nx, _data.ny, _data.editBox, p.x, p.y, p.z, r, op, layer, _changed))
+            {
+                if (!erased) return false;
+                _log.Add(e);
+                EditApplied?.Invoke(e);
+                return true;
+            }
 
             _log.Add(e);
+            MarkChanged();
+            EditApplied?.Invoke(e);
+            return true;
+        }
+
+        /// <summary>Marks the chunks that read the samples in _changed dirty.</summary>
+        private void MarkChanged()
+        {
             DigFormat.AffectedChunks(_changed[0], _changed[3], _data.chunkCells, _data.ChunksX, out int cx0, out int cx1);
             DigFormat.AffectedChunks(_changed[1], _changed[4], _data.chunkCells, _data.ChunksY, out int cy0, out int cy1);
             DigFormat.AffectedChunks(_changed[2], _changed[5], _data.chunkCells, _data.ChunksZ, out int cz0, out int cz1);
@@ -125,9 +189,35 @@ namespace LogicCuteGuy.DigHoleIt
             for (int cy = cy0; cy <= cy1; cy++)
             for (int cx = cx0; cx <= cx1; cx++)
                 MarkDirty(_data.ChunkIndex(cx, cy, cz));
+        }
 
-            EditApplied?.Invoke(e);
+        private bool ApplySpawn(long e, Vector3 p, float r, bool tree, int layer)
+        {
+            if (layer == 0) return EraseSpawned(p, r, tree ? 1 : 2);
+            GameObject[] prefabs = tree ? treePrefabs : detailPrefabs;
+            if (prefabs == null || layer > prefabs.Length || prefabs[layer - 1] == null || _spawned.Count >= maxSpawned) return false;
+            foreach (Spawned s in _spawned)
+                if (s.Edit == e) return false;
+
+            GameObject prefab = prefabs[layer - 1];
+            GameObject go = Instantiate(prefab, transform.parent, false);
+            go.transform.SetPositionAndRotation(transform.position + p * _data.voxelSize, Quaternion.Euler(0f, DigFoliage.SpawnYaw(e), 0f));
+            go.transform.localScale = prefab.transform.localScale * DigFoliage.SpawnScale(e);
+            _spawned.Add(new Spawned { Go = go, At = p, Tree = tree, Edit = e });
             return true;
+        }
+
+        /// <summary>Destroys the spawned objects within <paramref name="r"/> of <paramref name="p"/> (grid units). Kind: 0 all, 1 trees, 2 details.</summary>
+        private bool EraseSpawned(Vector3 p, float r, int kind)
+        {
+            float rr = r * r;
+            int removed = _spawned.RemoveAll(s =>
+            {
+                if (kind == 1 && !s.Tree || kind == 2 && s.Tree || (s.At - p).sqrMagnitude > rr) return false;
+                if (s.Go != null) Destroy(s.Go);
+                return true;
+            });
+            return removed > 0;
         }
 
         /// <summary>Restores the baked grid, then replays <paramref name="edits"/> (for loading or late join).</summary>
@@ -143,6 +233,9 @@ namespace LogicCuteGuy.DigHoleIt
             if (_data.HasPaintGrid) Array.Copy(_data.paint, _paint, _paint.Length);
             else Array.Clear(_paint, 0, _paint.Length);
             _log.Clear();
+            foreach (Spawned s in _spawned)
+                if (s.Go != null) Destroy(s.Go);
+            _spawned.Clear();
             foreach (int ci in _dirtyList) _dirty[ci] = false;
             _dirtyList.Clear();
 
@@ -172,6 +265,17 @@ namespace LogicCuteGuy.DigHoleIt
                     col.sharedMesh = b.Mesh;
                 }
             }
+        }
+
+        /// <summary>True if a tree (or detail) spawned at runtime stands within <paramref name="meters"/> of <paramref name="world"/>.</summary>
+        public bool SpawnedNear(Vector3 world, float meters, bool tree)
+        {
+            Vector3 g = (world - transform.position) / _data.voxelSize;
+            float rr = meters / _data.voxelSize;
+            rr *= rr;
+            foreach (Spawned s in _spawned)
+                if (s.Tree == tree && (s.At - g).sqrMagnitude < rr) return true;
+            return false;
         }
 
         /// <summary>Marching-ray hit against the grid, independent of physics. <paramref name="hit"/> is world space.</summary>

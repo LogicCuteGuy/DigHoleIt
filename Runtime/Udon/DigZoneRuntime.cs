@@ -63,6 +63,14 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         [HideInInspector] public Vector3[] surfaceDetailAnchors;
         [HideInInspector] public int[] surfaceDetailBuckets;
 
+        [Header("Spawned Trees And Details")]
+        [Tooltip("Prefabs a Dig Tool in Tree mode places. The edit names one by its index, so every player needs the same list.")]
+        public GameObject[] treePrefabs;
+        [Tooltip("Prefabs a Dig Tool in Detail mode places (grass, flowers, rocks).")]
+        public GameObject[] detailPrefabs;
+        [Tooltip("Most trees and details placed at runtime; further ones are ignored.")]
+        public int maxSpawned = 2048;
+
         [Header("Runtime")]
         [Tooltip("Optional. Without it, edits stay local to this player.")]
         public DigSync sync;
@@ -164,6 +172,17 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         private int _sHi;
         private bool[] _treeBaked;
 
+        // Smoothing: the samples it reads (one more on each side than it changes) and the result, across chunks.
+        private byte[] _smIn;
+        private byte[] _smOut;
+
+        // Trees and details spawned by edits: the object, its grid position, tree or detail, and the edit that made it.
+        private GameObject[] _spawned;
+        private Vector3[] _spawnAt;
+        private bool[] _spawnTree;
+        private long[] _spawnEdit;
+        private int _spawnCount;
+
         private void Start()
         {
             _Init();
@@ -250,6 +269,12 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 _treeBaked = new bool[treeObjects.Length];
                 for (int t = 0; t < treeObjects.Length; t++) _treeBaked[t] = treeObjects[t] != null && treeObjects[t].activeSelf;
             }
+
+            int spawnCap = maxSpawned > 0 ? maxSpawned : 0;
+            _spawned = new GameObject[spawnCap];
+            _spawnAt = new Vector3[spawnCap];
+            _spawnTree = new bool[spawnCap];
+            _spawnEdit = new long[spawnCap];
 
             _sw = new Stopwatch();
 #if UNITY_ANDROID || UNITY_IOS
@@ -350,6 +375,8 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             float r;
             int op;
             DigFormat.Unpack(e, out p, out r, out op);
+            if (op == DigFormat.OpTree || op == DigFormat.OpDetail) return true; // touches no grid
+            if (op == DigFormat.OpSmooth) r += 1f; // reads one sample further
             if (!_EditChunks(p, r)) return true;
             for (int cz = _er[2]; cz <= _er[5]; cz++)
                 for (int cy = _er[1]; cy <= _er[4]; cy++)
@@ -405,6 +432,18 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             return _cg[ci][(x - _r[0]) + w * ((y - _r[1]) + h * (z - _r[2]))] < 128;
         }
 
+        /// <summary>True if a tree (or detail) spawned at runtime stands within <paramref name="meters"/> of <paramref name="world"/>.</summary>
+        public bool _SpawnedNear(Vector3 world, float meters, bool tree)
+        {
+            if (!_IsReady()) return false;
+            Vector3 g = (world - transform.position) / voxelSize;
+            float rr = meters / voxelSize;
+            rr *= rr;
+            for (int k = 0; k < _spawnCount; k++)
+                if (_spawnTree[k] == tree && (_spawnAt[k] - g).sqrMagnitude < rr) return true;
+            return false;
+        }
+
         public long _PackWorld(Vector3 world, float radiusMeters, int op)
         {
             float r = Mathf.Min(radiusMeters, maxBrushRadius) / voxelSize;
@@ -418,8 +457,8 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         }
 
         /// <summary>
-        /// Like _LocalEdit with a paint layer: the layer to paint for op 3 (paint), or the layer given to added soil for
-        /// op 1 (add, 0 = leave as is). Layers: 0 auto, 1-4 terrain layers 0-3, 5 dug soil, 6-17 terrain layers 4-15 (DigFormat.PaintValue).
+        /// Like _LocalEdit with a paint layer: the layer to paint for op 3 (paint), the layer given to added soil for
+        /// op 1 (add, 0 = leave as is), or prefab index + 1 for op 4 (tree) and 5 (detail), 0 erasing them. Layers: 0 auto, 1-4 terrain layers 0-3, 5 dug soil, 6-17 terrain layers 4-15 (DigFormat.PaintValue).
         /// </summary>
         public void _LocalEditLayer(Vector3 world, float radiusMeters, int op, int layer)
         {
@@ -437,8 +476,10 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             float r;
             int op;
             DigFormat.Unpack(e, out p, out r, out op);
-            if (op != DigFormat.OpDig && op != DigFormat.OpAdd && op != DigFormat.OpPaint) return false;
-            if (DigFormat.UnpackLayer(e) > DigFormat.LayerMax) return false;
+            // Tree, detail and smooth edits use all layer bits (prefab index, strength).
+            bool anyLayer = op == DigFormat.OpTree || op == DigFormat.OpDetail || op == DigFormat.OpSmooth;
+            if (!anyLayer && op != DigFormat.OpDig && op != DigFormat.OpAdd && op != DigFormat.OpPaint) return false;
+            if (!anyLayer && DigFormat.UnpackLayer(e) > DigFormat.LayerMax) return false;
             if (r * voxelSize > maxBrushRadius + voxelSize * 0.25f) return false;
             return p.x <= nx && p.y <= ny && p.z <= nz;
         }
@@ -494,6 +535,13 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                 }
             }
             _decodedCount = 0;
+
+            for (int k = 0; k < _spawnCount; k++)
+            {
+                if (_spawned[k] != null) Destroy(_spawned[k]);
+                _spawned[k] = null;
+            }
+            _spawnCount = 0;
 
             if (_foliage && _mask != null)
             {
@@ -564,7 +612,19 @@ namespace LogicCuteGuy.DigHoleIt.Udon
             int op;
             DigFormat.Unpack(e, out p, out r, out op);
             int layer = DigFormat.UnpackLayer(e);
+            if (op == DigFormat.OpTree || op == DigFormat.OpDetail)
+            {
+                _ApplySpawn(e, p, r, op == DigFormat.OpTree, layer);
+                return;
+            }
+            if (op == DigFormat.OpSmooth)
+            {
+                _ApplySmooth(p, r, layer / (float)DigFormat.SmoothSteps);
+                return;
+            }
             if (op != DigFormat.OpDig && op != DigFormat.OpAdd && op != DigFormat.OpPaint) return;
+            // Digging takes away what was planted in the sphere, adding soil buries it.
+            if (op != DigFormat.OpPaint) _EraseSpawned(p, r, 0);
             if (!_EditChunks(p, r)) return;
             bool paints = op == DigFormat.OpPaint || (op == DigFormat.OpAdd && layer > 0);
 
@@ -603,6 +663,147 @@ namespace LogicCuteGuy.DigHoleIt.Udon
                                 p.x - _r[0], p.y - _r[1], p.z - _r[2], r, op, layer, _changed))
                             _MarkDirty(ci);
                     }
+        }
+
+        /// <summary>
+        /// Smooths the samples within <paramref name="r"/> of <paramref name="p"/> (grid units) like the editor brush
+        /// (DigGridUtil.Smooth). Neighbouring chunks share border samples, so the samples are gathered from the chunks
+        /// into one box, smoothed there, and every chunk copy gets the same result.
+        /// </summary>
+        private void _ApplySmooth(Vector3 p, float r, float strength)
+        {
+            if (strength <= 0f || r <= 0f) return;
+            int x0 = Mathf.Max(Mathf.Max(editBox[0], 1), Mathf.FloorToInt(p.x - r));
+            int y0 = Mathf.Max(Mathf.Max(editBox[1], 1), Mathf.FloorToInt(p.y - r));
+            int z0 = Mathf.Max(Mathf.Max(editBox[2], 1), Mathf.FloorToInt(p.z - r));
+            int x1 = Mathf.Min(Mathf.Min(editBox[3], nx - 1), Mathf.CeilToInt(p.x + r));
+            int y1 = Mathf.Min(Mathf.Min(editBox[4], ny - 1), Mathf.CeilToInt(p.y + r));
+            int z1 = Mathf.Min(Mathf.Min(editBox[5], nz - 1), Mathf.CeilToInt(p.z + r));
+            if (x1 < x0 || y1 < y0 || z1 < z0) return;
+
+            // Read box: one sample more on each side.
+            int bx = x0 - 1, by = y0 - 1, bz = z0 - 1;
+            int bw = x1 - x0 + 3, bh = y1 - y0 + 3, bd = z1 - z0 + 3;
+            int n = bw * bh * bd;
+            if (_smIn == null || _smIn.Length < n)
+            {
+                _smIn = new byte[n];
+                _smOut = new byte[n];
+            }
+
+            int cx0, cx1, cy0, cy1, cz0, cz1;
+            DigFormat.AffectedChunks(bx, bx + bw - 1, chunkCells, chunksX, out cx0, out cx1);
+            DigFormat.AffectedChunks(by, by + bh - 1, chunkCells, chunksY, out cy0, out cy1);
+            DigFormat.AffectedChunks(bz, bz + bd - 1, chunkCells, chunksZ, out cz0, out cz1);
+
+            // Gather. Every chunk holding a sample holds the same value, so any copy will do.
+            for (int cz = cz0; cz <= cz1; cz++)
+                for (int cy = cy0; cy <= cy1; cy++)
+                    for (int cx = cx0; cx <= cx1; cx++)
+                    {
+                        int ci = cx + chunksX * (cy + chunksY * cz);
+                        if (!_EnsureChunk(ci)) return;
+                        _SetRange(ci);
+                        byte[] g = _cg[ci];
+                        int w = _r[3] - _r[0] + 1, h = _r[4] - _r[1] + 1;
+                        int sx0 = Mathf.Max(bx, _r[0]), sx1 = Mathf.Min(bx + bw - 1, _r[3]);
+                        int sy0 = Mathf.Max(by, _r[1]), sy1 = Mathf.Min(by + bh - 1, _r[4]);
+                        int sz0 = Mathf.Max(bz, _r[2]), sz1 = Mathf.Min(bz + bd - 1, _r[5]);
+                        for (int z = sz0; z <= sz1; z++)
+                            for (int y = sy0; y <= sy1; y++)
+                                for (int x = sx0; x <= sx1; x++)
+                                    _smIn[(x - bx) + bw * ((y - by) + bh * (z - bz))] = g[(x - _r[0]) + w * ((y - _r[1]) + h * (z - _r[2]))];
+                    }
+
+            // Smooth the inner box into _smOut.
+            int sxy = bw * bh;
+            for (int z = z0; z <= z1; z++)
+                for (int y = y0; y <= y1; y++)
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int i = (x - bx) + bw * ((y - by) + bh * (z - bz));
+                        float dx = x - p.x, dy = y - p.y, dz = z - p.z;
+                        float k = Mathf.Clamp01(1f - Mathf.Sqrt(dx * dx + dy * dy + dz * dz) / r) * strength;
+                        float avg = (_smIn[i - 1] + _smIn[i + 1] + _smIn[i - bw] + _smIn[i + bw] + _smIn[i - sxy] + _smIn[i + sxy]) / 6f;
+                        _smOut[i] = (byte)Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(_smIn[i], avg, k)), 0, 255);
+                    }
+
+            // Write the inner box into every chunk copy of it.
+            for (int cz = cz0; cz <= cz1; cz++)
+                for (int cy = cy0; cy <= cy1; cy++)
+                    for (int cx = cx0; cx <= cx1; cx++)
+                    {
+                        int ci = cx + chunksX * (cy + chunksY * cz);
+                        _SetRange(ci);
+                        byte[] g = _cg[ci];
+                        int w = _r[3] - _r[0] + 1, h = _r[4] - _r[1] + 1;
+                        int sx0 = Mathf.Max(x0, _r[0]), sx1 = Mathf.Min(x1, _r[3]);
+                        int sy0 = Mathf.Max(y0, _r[1]), sy1 = Mathf.Min(y1, _r[4]);
+                        int sz0 = Mathf.Max(z0, _r[2]), sz1 = Mathf.Min(z1, _r[5]);
+                        bool any = false;
+                        for (int z = sz0; z <= sz1; z++)
+                            for (int y = sy0; y <= sy1; y++)
+                                for (int x = sx0; x <= sx1; x++)
+                                {
+                                    byte v = _smOut[(x - bx) + bw * ((y - by) + bh * (z - bz))];
+                                    int gi = (x - _r[0]) + w * ((y - _r[1]) + h * (z - _r[2]));
+                                    if (g[gi] == v) continue;
+                                    g[gi] = v;
+                                    any = true;
+                                }
+                        if (any) _MarkDirty(ci);
+                    }
+        }
+
+        /// <summary>
+        /// Places prefab <paramref name="layer"/> - 1 at grid position <paramref name="p"/>, upright with the edit's yaw
+        /// and scale, or erases the spawned trees or details in the sphere (layer 0). A predicted edit coming back
+        /// from the log finds its own object and places nothing.
+        /// </summary>
+        private void _ApplySpawn(long e, Vector3 p, float r, bool tree, int layer)
+        {
+            if (layer == 0)
+            {
+                _EraseSpawned(p, r, tree ? 1 : 2);
+                return;
+            }
+            GameObject[] prefabs = tree ? treePrefabs : detailPrefabs;
+            if (prefabs == null || layer > prefabs.Length) return;
+            GameObject prefab = prefabs[layer - 1];
+            if (prefab == null || _spawnCount >= _spawned.Length) return;
+            for (int k = 0; k < _spawnCount; k++)
+                if (_spawnEdit[k] == e) return;
+
+            GameObject go = Instantiate(prefab);
+            Transform t = go.transform;
+            // Beside the zone, not under it: a tool that hits one must not take it for the zone's surface.
+            t.SetParent(transform.parent, false);
+            t.position = transform.position + p * voxelSize;
+            t.rotation = Quaternion.Euler(0f, DigFoliage.SpawnYaw(e), 0f);
+            t.localScale = prefab.transform.localScale * DigFoliage.SpawnScale(e);
+            _spawned[_spawnCount] = go;
+            _spawnAt[_spawnCount] = p;
+            _spawnTree[_spawnCount] = tree;
+            _spawnEdit[_spawnCount] = e;
+            _spawnCount++;
+        }
+
+        /// <summary>Destroys the spawned objects within <paramref name="r"/> of <paramref name="p"/> (grid units). Kind: 0 all, 1 trees, 2 details.</summary>
+        private void _EraseSpawned(Vector3 p, float r, int kind)
+        {
+            float rr = r * r;
+            for (int k = _spawnCount - 1; k >= 0; k--)
+            {
+                if (kind == 1 && !_spawnTree[k] || kind == 2 && _spawnTree[k]) continue;
+                if ((_spawnAt[k] - p).sqrMagnitude > rr) continue;
+                if (_spawned[k] != null) Destroy(_spawned[k]);
+                _spawnCount--;
+                _spawned[k] = _spawned[_spawnCount];
+                _spawnAt[k] = _spawnAt[_spawnCount];
+                _spawnTree[k] = _spawnTree[_spawnCount];
+                _spawnEdit[k] = _spawnEdit[_spawnCount];
+                _spawned[_spawnCount] = null;
+            }
         }
 
         private void _MarkDirty(int ci)

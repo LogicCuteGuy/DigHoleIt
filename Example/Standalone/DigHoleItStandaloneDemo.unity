@@ -1124,7 +1124,6 @@ GameObject:
   - component: {fileID: 1191353963}
   - component: {fileID: 1191353962}
   - component: {fileID: 1191353961}
-  - component: {fileID: 1191353964}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -1206,24 +1205,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1191353964
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1191353960}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f321bac521ee8654c94eeea4baa12b7f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  cam: {fileID: 1191353962}
-  zones:
-  - {fileID: 1531149778}
-  reach: 50
-  radius: 1
-  interval: 0.1
 --- !u!1 &1214905810
 GameObject:
   m_ObjectHideFlags: 0
@@ -1330,6 +1311,87 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1214905810}
   m_Mesh: {fileID: -3391546824724277747, guid: 86fab886e71544ca8541d17931abfaf1, type: 2}
+--- !u!1001 &1226358258
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1344104207216661341, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2324956831715762380, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: cam
+      value: 
+      objectReference: {fileID: 1191353962}
+    - target: {fileID: 2324956831715762380, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: zones.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2324956831715762380, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: zones.Array.data[0]
+      value: 
+      objectReference: {fileID: 1531149778}
+    - target: {fileID: 2324956831715762380, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: layerNames.Array.size
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2324956831715762380, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: layerNames.Array.data[0]
+      value: Grass
+      objectReference: {fileID: 0}
+    - target: {fileID: 2324956831715762380, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: layerNames.Array.data[1]
+      value: Rock
+      objectReference: {fileID: 0}
+    - target: {fileID: 2825555814267900174, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
+      propertyPath: m_Name
+      value: Dig Pen (Standalone)
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 7695d2498ee7f0744a684f88b7ce31b1, type: 3}
 --- !u!1 &1279856480
 GameObject:
   m_ObjectHideFlags: 0
@@ -1679,6 +1741,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxChunksPerFrame: 4
+  treePrefabs:
+  - {fileID: 763032181362496640, guid: 8aff8d4c0ec44428979cec4cce543139, type: 3}
+  - {fileID: 7935165529121742441, guid: 3cfbaf70e1ab4b598ef3f75e1c1e9ca7, type: 3}
+  detailPrefabs:
+  - {fileID: 5105571396875579068, guid: 34230658e292a7d4cb523f54de0d2b1c, type: 3}
+  - {fileID: 1501646756422189630, guid: 19df8c618ef7cfe46acdee49a6c041e2, type: 3}
+  maxSpawned: 2048
 --- !u!114 &1531149781
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2413,3 +2482,4 @@ SceneRoots:
   - {fileID: 562975032}
   - {fileID: 1564085439}
   - {fileID: 1531149782}
+  - {fileID: 1226358258}

@@ -60,9 +60,11 @@ namespace LogicCuteGuy.DigHoleIt.Udon
         public void _Submit(long packed)
         {
             if (_log == null || _count >= capacity) return;
-            zone._EnqueueEdit(packed);
+            // Smoothing twice smooths more, so it is not predicted: it is applied once, when it comes back in log order.
+            bool owner = Networking.IsOwner(gameObject);
+            if (owner || (int)((packed >> 56) & 7) != DigFormat.OpSmooth) zone._EnqueueEdit(packed);
 
-            if (Networking.IsOwner(gameObject)) _OwnerAppend(packed);
+            if (owner) _OwnerAppend(packed);
             else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(RequestEdit), packed);
         }
 

@@ -13,22 +13,29 @@ The grid is stored on `DigZoneRuntime` per chunk, run-length compressed. Nothing
 
 ## DigTool
 
-A pickup that digs, adds or paints where it points.
+A pickup that digs, adds soil, smooths, paints a terrain layer, or plants trees and details where it points.
+
+**Dig Pen (VRChat)** (`Example/Pen`) is a ready-made one: a pen pickup (with VRC Object Sync), a brush cursor and a settings panel (a world space canvas with VRC Ui Shape) for the mode, the option of the mode (soil or paint layer, tree or detail prefab, or erase), size and rate, and a Reset Zones button. Drop it in: when the scene is opened, saved or played, an empty `zones` gets the scene's zones, empty `layerNames` the terrain's layer names, and a zone's empty `treePrefabs` / `detailPrefabs` the terrain's tree prototypes and detail mesh prototypes (else the example Oak, Pine, Grass Clump and Flower Clump). Fill them yourself to choose. The VRChat demo scene has one. Settings are each player's own; the edits are networked.
 
 | Field | Meaning |
 |---|---|
-| `zones` | The `DigZoneRuntime`s this tool can edit. |
+| `zones` | Zones the tip may be buried in, and whose prefab lists the settings panel shows. Zones the ray hits are found from the hit collider. |
 | `tip` | Ray origin and direction (forward). Defaults to the tool's own transform. |
 | `layers` | Layers the ray can hit. Include the zone's Chunk Layer. |
 | `reach` | Ray length in metres. |
 | `radius` | Brush radius in metres (capped by the zone's Max Brush Radius). |
-| `mode` | 0 dig, 1 add, 2 paint. |
+| `mode` | 0 dig, 1 add, 2 paint, 3 tree, 4 detail, 5 smooth. |
+| `smoothStrength` | How far one smooth edit blends (0–1). The panel's `<` `>` change it in smooth mode. |
 | `paintLayer` | Layer painted in paint mode: 0 auto (erase paint), 1–4 terrain layers 0–3, 5 dug soil, 6–17 terrain layers 4–15 (`DigFormat.PaintValue(terrainLayer)`). |
 | `addLayer` | Layer given to added soil, same values. 0 leaves it to Auto shading. |
 | `interval` | Seconds between edits while Use is held. |
 | `digIndicator`, `addIndicator`, `paintIndicator` | Optional objects shown for the current mode. |
+| `treeIndex`, `detailIndex` | Which of the zone's `treePrefabs` / `detailPrefabs` to plant; -1 erases planted ones in the brush. |
+| `treeSpacing`, `detailSpacing`, `detailsPerEdit` | Nothing is planted closer than the spacing to another planted one of its kind; details scatter over the brush. |
+| `tipRenderer`, `modeColors`, `cursor` | Optional: the tip takes the mode colour, the cursor sits on the brush at its size while the tool is held. |
+| `layerNames`, `modeLabel`, `optionLabel`, `sizeLabel`, `sizeSlider`, `rateSlider` | Optional settings UI. |
 
-Call `_ToggleMode()` to switch between dig and add, or `_NextMode()` to cycle dig, add, paint (for example from a UI button with `SendCustomEvent`).
+Call `_ToggleMode()` to switch between dig and add, or `_NextMode()` to cycle the modes. UI buttons call (with `SendCustomEvent`) `SelectDig`, `SelectAdd`, `SelectPaint`, `SelectTree`, `SelectDetail`, `SelectSmooth`, `PrevOption`, `NextOption`, `ResetZones`, and sliders `OnSliderChanged`. These ignore network events.
 
 ## DigZoneRuntime
 
@@ -49,9 +56,13 @@ Methods other behaviours can call:
 | `sync` | The zone's `DigSync`. Without it, edits stay local to each player. |
 | `budgetMsDesktop` / `budgetMsMobile` | Milliseconds per frame for applying edits and meshing (default 2.5 / 1.2). The chunk nearest the player is meshed first. |
 | `logTimings` | Logs meshing times to the console. |
+| `treePrefabs`, `detailPrefabs` | What tree and detail edits plant (an edit names one by index, so keep the lists the same for everyone). Planted objects stand upright with a yaw and scale (0.8–1.2) taken from the edit, beside the zone in the hierarchy; digging or adding soil over one removes it. |
+| `maxSpawned` | Most planted objects; further plant edits are ignored. |
 | `foliageMask`, `detailRenderers`, `treeObjects` | The zone's terrain trees and details, filled in by the bridge. When a remeshed chunk finds the ground under a tree or detail (also on walls and cave ceilings: `surfaceDetailAnchors`) dug away or buried, the tree is deactivated and the detail renderers get a live copy of the foliage mask (through a MaterialPropertyBlock). A reset brings them back. |
 
-Edit ops (`DigFormat`): `OpDig = 0`, `OpAdd = 1`, `OpPaint = 3`. `OpSmooth = 2` is editor only and is rejected at runtime.
+Edit ops (`DigFormat`): `OpDig = 0`, `OpAdd = 1`, `OpSmooth = 2` (layer = strength in 1/31), `OpPaint = 3`, `OpTree = 4`, `OpDetail = 5` (layer = prefab index + 1, 0 erases planted ones in the sphere).
+Smoothing is not idempotent, so `DigSync` does not predict it: the player who smooths sees it when it comes back in log order (one round trip).
+`_SpawnedNear(Vector3 world, float meters, bool tree)` tells whether something was planted near a point. `OpSmooth = 2` is editor only and is rejected at runtime.
 
 ## DigSync
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-10-09
+
+### Added
+- Planting trees and details at runtime, in VRChat and standalone: new edit ops `DigFormat.OpTree` and `OpDetail` place the zone's `treePrefabs` / `detailPrefabs` (layer = index + 1, 0 erases). They are networked and replayed like any edit, idempotent, and removed by digging or adding soil over them.
+- VRChat showcase example scene `Example/VRChat/DigHoleItVRChatShowcase.unity`: a large zone (151 x 89 x 155 at 0.5 m) with terrain trees and grass in the hole and four Dig Pens. It has its own terrain copy, with the grass thinned to keep the baked zone data under 100 MB.
+- Dig Pen prefabs in `Example/Pen`: **Dig Pen (VRChat)**, a pickup with a settings panel, and **Dig Pen (Standalone)**, a mouse pen with an on-screen panel. Dig, add, paint terrain layers, plant trees, plant details, with size, rate and option (layer, prefab, erase) settings and a brush cursor. Both demo scenes have one. `Grass Clump` and `Flower Clump` detail prefabs.
+- `DigTool` modes 3 (tree) and 4 (detail), settings UI hooks; `DigToolStandalone.mode` and settings panel.
+- Smoothing at runtime: `DigFormat.OpSmooth` is now a networked edit (strength in the layer bits), smooth mode on both pens (`smoothStrength`), `DigZoneRuntimeStandalone.Smooth`. The Udon runtime smooths across chunk borders so neighbouring chunks stay equal. DigSync does not predict smoothing (it is not idempotent); it is applied once, in log order.
+- Empty Tree Prefabs / Detail Prefabs on a zone runtime are filled from the terrain's tree and detail mesh prototypes (else the example ones), and a DigTool's empty Zones and Layer Names from the scene, on bake, scene open, save and play (`DigSpawnDefaults`). Pens warn once when they have nothing to plant.
+
+### Changed
+- `DigTool` finds the zone from the collider it hits, so `zones` is only needed for a buried tip and the panel's prefab names.
+
 ## [0.6.1] - 2026-09-28
 
 ### Fixed

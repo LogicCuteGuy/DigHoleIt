@@ -11,6 +11,9 @@ Bake the zone as usual, then click **Add Standalone Runtime** in the zone inspec
 | `Dig(Vector3 world, float radius)` | Digs a sphere at a world position. |
 | `Add(Vector3 world, float radius)` | Adds a sphere of soil. |
 | `Paint(Vector3 world, float radius, int layer)` | Paints voxels: 0 auto (erase paint), 1–4 terrain layers 0–3, 5 dug soil, 6–17 terrain layers 4–15 (`DigFormat.PaintValue(terrainLayer)`). |
+| `Tree(Vector3 world, float radius, int index)` / `Detail(...)` | Plants `treePrefabs[index]` / `detailPrefabs[index]` at a surface point, upright with a yaw and scale from the edit; index -1 erases planted ones within the radius. Digging or adding soil over a planted object removes it. |
+| `Smooth(Vector3 world, float radius, float strength)` | Smooths the surface in the sphere (strength 0–1). Not idempotent: apply each smooth edit once, and don't feed your own back into `ApplyEdit`. |
+| `SpawnedNear(Vector3 world, float meters, bool tree)` | Whether something was planted near a point. |
 | `LocalEdit(Vector3 world, float radius, int op, int layer = 0)` | The general form. Raises `LocalEditRequested`, then applies the edit. |
 | `ApplyEdit(long edit)` | Applies a packed edit, for example one received from another player. Returns true if the grid changed. |
 | `LoadEdits(IEnumerable<long> edits)` | Restores the baked grid and replays a list of edits (loading a save, or a late joiner). |
@@ -29,16 +32,22 @@ Terrain trees and details in the zone go away where the ground under them is dug
 
 ## DigToolStandalone
 
-Mouse digging from a camera, using the legacy Input Manager: the left button digs, the right adds and the middle paints.
+Mouse pen from a camera, using the legacy Input Manager: the left button uses the current mode (dig, add, paint, tree, detail, smooth), the right adds and the middle paints. With **Show Settings** it draws a panel (IMGUI, Tab hides it) for the mode, the option of the mode (soil or paint layer, tree or detail prefab, or erase), size, rate and a zone reset.
+
+**Dig Pen (Standalone)** (`Example/Pen`) is the tool with a brush cursor; the standalone demo scene has one.
 
 | Field | Meaning |
 |---|---|
 | `cam` | The camera to cast rays from. |
 | `zones` | The zones this tool can edit. |
 | `reach`, `radius`, `interval` | Ray length, brush radius and seconds between edits while a button is held. |
+| `mode` | What the left button does. |
+| `smoothStrength` | How far one smooth edit blends (0–1). |
 | `addLayer`, `paintLayer` | Layers for added soil and for painting. |
+| `treeIndex`, `detailIndex`, `treeSpacing`, `detailSpacing`, `detailsPerEdit` | What to plant (-1 erases) and how close together. |
+| `cursor`, `showSettings`, `layerNames` | Brush cursor, settings panel and the terrain layer names it shows. |
 
-`EditAtScreen(Vector2 screen, int op)` applies one edit at a screen position, for your own input code.
+`EditAtScreen(Vector2 screen, int op)` applies one edit at a screen position and `UseAtScreen(Vector2 screen, Mode mode)` uses a mode there, for your own input code.
 
 ## Saves
 

@@ -260,5 +260,30 @@ namespace LogicCuteGuy.DigHoleIt.Tests
             }
             Assert.Greater(removed, 5, "the edits removed some trees");
         }
+
+        [Test]
+        public void SpawnEditsRoundTripAndLookTheSameEverywhere()
+        {
+            long e = DigFormat.PackLayer(new Vector3(12.25f, 7.5f, 30f), 1.5f, DigFormat.OpTree, 2);
+            DigFormat.Unpack(e, out Vector3 p, out float r, out int op);
+            Assert.AreEqual(DigFormat.OpTree, op);
+            Assert.AreEqual(2, DigFormat.UnpackLayer(e));
+            Assert.AreEqual(12.25f, p.x, 1e-4f);
+            Assert.AreEqual(1.5f, r, 1e-4f);
+
+            long d = DigFormat.PackLayer(new Vector3(3f, 4f, 5f), 1f, DigFormat.OpDetail, 0);
+            DigFormat.Unpack(d, out _, out _, out op);
+            Assert.AreEqual(DigFormat.OpDetail, op);
+            Assert.AreEqual(0, DigFormat.UnpackLayer(d));
+
+            for (long k = 0; k < 2000; k++)
+            {
+                long s = DigFormat.PackLayer(new Vector3(k * 0.37f % 60f, k % 30, k * 0.11f % 60f), 1f, DigFormat.OpDetail, 1);
+                float yaw = DigFoliage.SpawnYaw(s), scale = DigFoliage.SpawnScale(s);
+                Assert.That(yaw, Is.InRange(0f, 360f));
+                Assert.That(scale, Is.InRange(0.8f, 1.2f));
+                Assert.AreEqual(yaw, DigFoliage.SpawnYaw(s));
+            }
+        }
     }
 }

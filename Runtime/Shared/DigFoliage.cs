@@ -85,6 +85,18 @@ namespace LogicCuteGuy.DigHoleIt
             return f < 0f ? 0f : f > 1f ? 1f : f;
         }
 
+        /// <summary>Yaw in degrees a tree or detail spawned by edit <paramref name="e"/> gets, the same on every client.</summary>
+        public static float SpawnYaw(long e)
+        {
+            return (int)((e ^ (e >> 21) ^ (e >> 37)) & 1023) * (360f / 1024f);
+        }
+
+        /// <summary>Scale (0.8..1.2) a tree or detail spawned by edit <paramref name="e"/> gets, the same on every client.</summary>
+        public static float SpawnScale(long e)
+        {
+            return 0.8f + (int)(((e >> 5) ^ (e >> 26) ^ (e >> 41)) & 255) * (0.4f / 255f);
+        }
+
         /// <summary>Height (grid units) of the topmost surface of column (x, z) of a whole grid, or -1 if it has none.</summary>
         public static float TopSurface(byte[] grid, int nx, int ny, int x, int z)
         {

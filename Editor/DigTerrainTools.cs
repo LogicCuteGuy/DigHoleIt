@@ -95,7 +95,7 @@ namespace LogicCuteGuy.DigHoleIt.Editor
         {
             TerrainData td = terrain.terrainData;
             Vector3 tp = terrain.transform.position;
-            var go = new GameObject("Dig Zone");
+            var go = new GameObject(GameObjectUtility.GetUniqueNameForSibling(null, "Dig Zone"));
             Undo.RegisterCreatedObjectUndo(go, "Create Dig Zone");
             var zone = go.AddComponent<DigZone>();
             zone.terrain = terrain;
