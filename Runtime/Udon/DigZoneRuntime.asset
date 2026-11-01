@@ -30,24 +30,6 @@ MonoBehaviour:
     PrefabModificationsReferencedUnityObjects: []
     PrefabModifications: []
     SerializationNodes:
-    - Name: lcgCallbackSourceNames
-      Entry: 7
-      Data: 0|System.String[], mscorlib
-    - Name: 
-      Entry: 12
-      Data: 0
-    - Name: 
-      Entry: 13
-      Data: 
-    - Name: 
-      Entry: 8
-      Data: 
-    - Name: lcgCallbackEventNames
-      Entry: 9
-      Data: 0
-    - Name: lcgCallbackParameterNames
-      Entry: 9
-      Data: 0
     - Name: fieldDefinitions
       Entry: 7
       Data: 1|System.Collections.Generic.Dictionary`2[[System.String, mscorlib],[UdonSharp.Compiler.FieldDefinition,

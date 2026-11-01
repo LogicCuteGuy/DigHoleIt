@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Works with the stock UdonSharp that ships in the VRChat Worlds SDK. LCGUdonSharp is no longer a package dependency (it still works as a drop-in). Removed LCGUdonSharp-only fields from the bundled U# program assets.
+
 ## [0.7.0] - 2026-10-09
 
 ### Added

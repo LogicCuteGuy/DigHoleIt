@@ -4,7 +4,7 @@ namespace LogicCuteGuy.DigHoleIt
 {
     /// <summary>
     /// Naive Surface Nets over the byte grid, one chunk at a time, split into resumable steps so the
-    /// Udon runtime can spread a chunk over several frames. Shared by both runtimes (LCGUdonSharp subset).
+    /// Udon runtime can spread a chunk over several frames. Shared by both runtimes (UdonSharp subset).
     ///
     /// A chunk of n cells per axis owns cells [0, n). Vertices are also computed for the cells at -1 so the
     /// owned edges on the low faces can form quads; those border vertices duplicate the neighbour chunk's

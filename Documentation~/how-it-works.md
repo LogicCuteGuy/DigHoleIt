@@ -44,7 +44,7 @@ Dig is `max(d, -sphere)` and Add is `min(d, sphere)`. Paint sets the layer insid
 - Normals come from the SDF gradient, so chunk borders have no lighting seams.
 - Each quad is split along its shorter diagonal, which avoids saw-tooth folds on sharp rims.
 - Paint becomes per-vertex weights, interpolated over the cell's corners. Each chunk mesh has 4 paint slots: the first 4 terrain layers painted in the chunk. Vertex colour holds the slot weights, uv0.x the dug soil weight, and uv0.y the slots' terrain layers (4 bits each, the same on every vertex of the chunk). Meshes from earlier versions have 0 there, which reads as slots = layers 0–3.
-- `Runtime/Shared` is registered as an UdonSharp assembly. LCGUdonSharp compiles the same static methods into Udon that the C# runtime calls directly.
+- `Runtime/Shared` is registered as an UdonSharp assembly. UdonSharp (stock or LCGUdonSharp) compiles the same static methods into Udon that the C# runtime calls directly.
 
 ## Shading
 

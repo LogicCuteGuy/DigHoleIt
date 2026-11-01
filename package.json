@@ -27,7 +27,6 @@
   },
   "dependencies": {},
   "vpmDependencies": {
-    "com.vrchat.worlds": "3.10.5",
-    "com.logiccuteguy.lcgudonsharp": ">=0.3.4"
+    "com.vrchat.worlds": "3.10.5"
   }
 }

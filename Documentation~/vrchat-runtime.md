@@ -1,6 +1,6 @@
 # VRChat runtime
 
-The VRChat runtime is written in UdonSharp and compiled with LCGUdonSharp. Bake the zone, then click **Add VRChat Runtime** in its inspector. That adds:
+The VRChat runtime is written in UdonSharp and compiled with UdonSharp (stock, or LCGUdonSharp as a drop-in). Bake the zone, then click **Add VRChat Runtime** in its inspector. That adds:
 
 - `DigZoneRuntime` on the zone GameObject, which applies edits and remeshes chunks;
 - `DigSync` on a child GameObject, which networks the edits.

@@ -8,7 +8,7 @@ namespace LogicCuteGuy.DigHoleIt
     /// Stream: varint sample count, then tokens. A token is varint <c>(length &lt;&lt; 1) | isRun</c>, followed by one
     /// value byte for a run or <c>length</c> literal bytes. Varints are 7 bits per byte, low bits first.
     ///
-    /// Shared by the Udon and standalone runtimes: keep to the LCGUdonSharp subset.
+    /// Shared by the Udon and standalone runtimes: keep to the UdonSharp subset.
     /// </summary>
     public static class DigRle
     {

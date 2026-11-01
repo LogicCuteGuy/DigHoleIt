@@ -4,7 +4,7 @@ namespace LogicCuteGuy.DigHoleIt
 {
     /// <summary>
     /// CSG sphere brushes on the byte grid. Dig, Add and Paint are idempotent, which network replay relies on.
-    /// Shared by the Udon and standalone runtimes: keep to the LCGUdonSharp subset
+    /// Shared by the Udon and standalone runtimes: keep to the UdonSharp subset
     /// (static methods, primitives, arrays, Unity value types; no custom structs or classes).
     /// </summary>
     public static class DigBrush

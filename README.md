@@ -1,6 +1,6 @@
 # DigHoleIt
 
-Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRChat worlds (LCGUdonSharp)** and usable in **standalone games**.
+Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRChat worlds (UdonSharp)** and usable in **standalone games**.
 
 ![A Dig Zone on a Unity Terrain: a tunnel through a hill, a dug pit, added soil, and painted snow, rock and sand](Documentation~/images/hero.jpg)
 
@@ -42,7 +42,7 @@ Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRCha
 |---|---|---|
 | Unity | 2022.3 | 2022.3 |
 | Render pipeline | Built-in | Built-in |
-| Other | VRChat Worlds SDK 3.10.5 and **LCGUdonSharp** 0.3.4 or later | none |
+| Other | VRChat Worlds SDK 3.10.5 (includes **UdonSharp**); LCGUdonSharp 0.3.4+ also works | none |
 
 ## Install
 
@@ -52,7 +52,7 @@ Diggable voxel terrain for Unity, in the spirit of Digger Pro. Built for **VRCha
 https://vpm.logiccuteguy.com/index.json
 ```
 
-Then add **DigHoleIt** to your project. VCC also installs LCGUdonSharp with it. The listing may lag behind the newest GitHub release.
+Then add **DigHoleIt** to your project. VCC installs the VRChat Worlds SDK with it, which includes UdonSharp. LCGUdonSharp is optional and not required. The listing may lag behind the newest GitHub release.
 
 **Git URL:** *Window > Package Manager > + > Add package from git URL*:
 

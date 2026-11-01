@@ -6,20 +6,20 @@
 |---|---|---|
 | Unity | 2022.3 | 2022.3 |
 | Render pipeline | Built-in | Built-in |
-| Other | VRChat Worlds SDK 3.10.5 and **LCGUdonSharp** 0.3.4 or later | none |
+| Other | VRChat Worlds SDK 3.10.5 (includes **UdonSharp**); LCGUdonSharp 0.3.4+ also works | none |
 
 ## Installing
 
 Pick one:
 
 - **VRChat Creator Companion (VCC):** add the LogicCuteGuy repository from [docs.logiccuteguy.com](https://docs.logiccuteguy.com/) (**Install via VCC**), or add
-  `https://vpm.logiccuteguy.com/index.json` in *Settings > Packages > Add Repository*. Then add **DigHoleIt** to your project; VCC installs LCGUdonSharp with it. The listing may lag behind the newest GitHub release.
+  `https://vpm.logiccuteguy.com/index.json` in *Settings > Packages > Add Repository*. Then add **DigHoleIt** to your project; VCC installs the VRChat Worlds SDK (with UdonSharp) with it. The listing may lag behind the newest GitHub release.
 - **Git URL:** *Window > Package Manager > + > Add package from git URL* and enter
   `https://github.com/LogicCuteGuy/DigHoleIt.git`.
   Add `#v0.6.1` (or another tag) to the end to pin a version.
 - **Embedded:** clone or copy the repository into your project's `Packages/com.logiccuteguy.digholeit` folder.
 
-With a Git URL or embedded install in a VRChat project, install LCGUdonSharp first. The Udon runtime does not compile without it.
+With a Git URL or embedded install in a VRChat project, the Udon runtime compiles with the stock UdonSharp that ships in the VRChat Worlds SDK. LCGUdonSharp (a drop-in replacement compiler) works too but is not required.
 
 ## Example scenes
 
